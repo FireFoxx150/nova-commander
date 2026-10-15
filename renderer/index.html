@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' file: data:; media-src file:; frame-src file:; font-src 'self' file:; style-src 'self' 'unsafe-inline'; script-src 'self'">
+  <title>Nova Commander</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <defs>
+      <linearGradient id="nc-folder-front" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" style="stop-color: var(--folder-front-top)"/>
+        <stop offset="1" style="stop-color: var(--folder-front)"/>
+      </linearGradient>
+    </defs>
+  </svg>
+  <header id="titlebar">
+    <div class="brand"><span class="logo"><i></i></span>Nova Commander</div>
+    <div class="tb-drag"></div>
+    <div class="win-controls">
+      <button id="win-min" title="Minimize"><svg viewBox="0 0 24 24"><path d="M6 12h12"/></svg></button>
+      <button id="win-max" title="Maximize"><svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1"/></svg></button>
+      <button id="win-close" class="close" title="Close"><svg viewBox="0 0 24 24"><path d="M7 7l10 10M17 7 7 17"/></svg></button>
+    </div>
+  </header>
+
+  <main id="main">
+    <aside id="sidebar">
+      <div id="sb-boxes"></div>
+      <div id="droplist" data-drop="drop:"></div>
+      <div class="sb-bottom">
+        <button class="sb-btn" id="btn-settings" title="Settings (Ctrl+,)"></button>
+        <button class="sb-btn" id="btn-theme" title="Theme"></button>
+        <button class="sb-btn toggle" id="btn-hidden" title="Show hidden files (Ctrl+H)"></button>
+        <button class="sb-btn toggle" id="btn-dual" title="Dual pane (Ctrl+D)"></button>
+        <button class="sb-btn toggle" id="btn-preview" title="Details / preview panel (Ctrl+P)"></button>
+        <button class="sb-btn" id="btn-undo" title="Undo (Ctrl+Z)"></button>
+        <button class="sb-btn" id="btn-ops" title="File operations"><span class="badge" hidden></span></button>
+      </div>
+    </aside>
+    <div id="panes">
+      <section class="pane" id="pane0"></section>
+      <div class="pane-divider" id="pane-divider"></div>
+      <section class="pane" id="pane1"></section>
+    </div>
+  </main>
+
+  <div id="ops" hidden></div>
+  <div id="toasts"></div>
+  <div id="ctxmenu" class="menu" hidden></div>
+  <div id="modal-root"></div>
+  <div id="drag-tip" hidden></div>
+  <div id="drag-ghost"></div>
+
+  <script src="icons.js"></script>
+  <script src="app.js"></script>
+  <script src="tools.js"></script>
+</body>
+</html>
