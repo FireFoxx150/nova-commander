@@ -71,7 +71,7 @@ Architecture: $ARCH
 Installed-Size: $INSTALLED_KB
 Maintainer: matthew <firefoxx.ms@gmail.com>
 Depends: libgtk-3-0 | libgtk-3-0t64, libnss3, libxss1, libxtst6, libgbm1, libasound2 | libasound2t64, xdg-utils
-Recommends: 7zip | p7zip-full, zstd
+Recommends: 7zip | p7zip-full, zstd, ffmpegthumbnailer
 Description: Modern dark dual-pane file manager inspired by One Commander
  Nova Commander is a dual-pane file manager with Miller columns, tabs,
  colour-coded file ages, folder sizes, thumbnails, colour tags, batch rename,

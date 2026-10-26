@@ -819,6 +819,45 @@ function readUserDirs() {
   return dirs;
 }
 
+// Device path -> filesystem label, from udev's /dev/disk/by-label links (names escape spaces as \x20).
+function driveLabels() {
+  const labels = new Map();
+  try {
+    for (const l of fs.readdirSync('/dev/disk/by-label')) {
+      try { labels.set(fs.realpathSync(path.join('/dev/disk/by-label', l)), l.replace(/\\x([0-9a-f]{2})/gi, (_, h) => String.fromCharCode(parseInt(h, 16)))); } catch { /* dangling link */ }
+    }
+  } catch { /* no udev labels */ }
+  return labels;
+}
+
+// Extra details for the Properties dialog: the volume holding `p`, and owner/group names.
+ipcMain.handle('fs:props', async (_, p) => {
+  const out = {};
+  try {
+    // Longest mount point that contains p.
+    let best = null;
+    for (const line of fs.readFileSync('/proc/mounts', 'utf8').split('\n')) {
+      const [dev, mnt, type] = line.split(' ');
+      if (!mnt) continue;
+      const point = mnt.replace(/\\040/g, ' ');
+      if (isInside(p, point) && (!best || point.length >= best.point.length)) best = { dev, point, type };
+    }
+    if (best) {
+      let label = null;
+      try { label = driveLabels().get(fs.realpathSync(best.dev)); } catch { /* not a block device */ }
+      const s = await fsp.statfs(best.point);
+      Object.assign(out, { mount: best.point, fstype: best.type, volume: label || (best.point === '/' ? 'File System' : path.basename(best.point)), total: s.blocks * s.bsize, free: s.bavail * s.bsize });
+    }
+  } catch { /* volume info is optional */ }
+  try {
+    const st = await fsp.lstat(p);
+    const nameOf = (file, id) => fs.readFileSync(file, 'utf8').split('\n').map((l) => l.split(':')).find((f) => f[2] === String(id))?.[0] || String(id);
+    out.owner = nameOf('/etc/passwd', st.uid);
+    out.group = nameOf('/etc/group', st.gid);
+  } catch { /* owner info is optional */ }
+  return out;
+});
+
 ipcMain.handle('sys:places', async () => {
   const home = os.homedir();
   const ud = readUserDirs();
@@ -837,6 +876,7 @@ ipcMain.handle('sys:places', async () => {
   if (await exists(trash)) places.push({ id: 'trash', name: 'Trash', path: trash });
 
   const drives = [];
+  const labels = driveLabels();
   try {
     const mounts = fs.readFileSync('/proc/mounts', 'utf8').split('\n');
     const seen = new Set();
@@ -849,7 +889,11 @@ ipcMain.handle('sys:places', async () => {
       seen.add(point);
       let total = 0, free = 0;
       try { const s = await fsp.statfs(point); total = s.blocks * s.bsize; free = s.bavail * s.bsize; } catch { /* ignore */ }
-      drives.push({ name: point === '/' ? 'File System' : path.basename(point), path: point, total, free, removable: point !== '/' && point !== '/home' });
+      let label = null;
+      try { label = labels.get(fs.realpathSync(dev)); } catch { /* not a block device */ }
+      // Unlabelled drives get Nemo's "<size> Volume" name (decimal units, like Nemo).
+      const volName = total ? `${(total / 1e12 >= 1 ? (total / 1e12).toFixed(1) + ' TB' : Math.round(total / 1e9) + ' GB')} Volume` : path.basename(point);
+      drives.push({ name: label || (point === '/' ? 'File System' : volName), path: point, total, free, removable: point !== '/' && point !== '/home' });
     }
   } catch { drives.push({ name: 'File System', path: '/', total: 0, free: 0 }); }
   return { home, user: os.userInfo().username, places, drives };
@@ -1444,6 +1488,31 @@ ipcMain.handle('thumb:stats', async (_, clear) => {
   let size = 0, count = 0;
   try { for (const n of await fsp.readdir(dir)) { size += (await fsp.stat(path.join(dir, n))).size; count++; } } catch { /* empty */ }
   return { size, count };
+});
+
+// Video frames for the thumbnail view. Stored beside the image thumbnails, keyed by path + mtime + size.
+const videoThumbFails = new Set();
+ipcMain.handle('thumb:video', async (_, p) => {
+  try {
+    const st = await fsp.stat(p);
+    const key = cacheKey(p, st);
+    const f = path.join(thumbDir(), `${key}.frame.png`);
+    if (await exists(f)) return ok({ url: pathToFileURL(f).href });
+    if (videoThumbFails.has(key)) return { ok: false, error: 'No frame' };
+    await fsp.mkdir(thumbDir(), { recursive: true });
+    const tmp = `${f}.tmp.png`;
+    // ffmpegthumbnailer picks a frame about 10% in; ffmpeg is the fallback for files it can't read.
+    let r = { code: -1, out: '' };
+    const ffthumb = tool('ffmpegthumbnailer');
+    if (ffthumb) r = await run(`vt-${key}`, ffthumb, ['-i', p, '-o', tmp, '-s', '256', '-c', 'png', '-t', '10']);
+    if (r.code !== 0 || !(await exists(tmp))) {
+      const ff = tool('ffmpeg');
+      if (ff) r = await run(`vt-${key}`, ff, ['-v', 'error', '-y', '-ss', '3', '-i', p, '-frames:v', '1', '-vf', 'scale=256:-2', tmp]);
+    }
+    if (!(await exists(tmp))) { videoThumbFails.add(key); return { ok: false, error: r.out ? toolError(r.out, r.code) : 'No video tool' }; }
+    await fsp.rename(tmp, f);
+    return ok({ url: pathToFileURL(f).href });
+  } catch (e) { return fail(e); }
 });
 
 // Writes bytes produced by the renderer (batch image tool) to a new file next to the source.

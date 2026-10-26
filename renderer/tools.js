@@ -376,6 +376,78 @@ async function copyToDialog(paths, mode) {
 }
 
 /* =========================================================
+ * Properties
+ * ======================================================= */
+const rwx = (mode) => [...mode.padStart(3, '0')].map((d) => ['r', 'w', 'x'].map((c, i) => (d & (4 >> i) ? c : '-')).join('')).join('');
+const ACCESS = ['None', 'Execute only', 'Write only', 'Write and execute', 'Read-only', 'Read and execute', 'Read and write', 'Read, write and execute'];
+// Used/free pie chart, as in Nemo's Properties.
+function pieSvg(used, total) {
+  const f = total ? Math.min(used / total, 0.9999) : 0;
+  const a = f * 2 * Math.PI, r = 90, cx = 95, cy = 95;
+  const x = cx + r * Math.sin(a), y = cy - r * Math.cos(a);
+  return `<svg viewBox="0 0 190 190" width="190" height="190"><circle cx="${cx}" cy="${cy}" r="${r}" fill="#6c9bd2" stroke="#2a3d55" stroke-width="1.5"/>`
+    + (f > 0 ? `<path d="M${cx} ${cy}L${cx} ${cy - r}A${r} ${r} 0 ${f > 0.5 ? 1 : 0} 1 ${x} ${y}Z" fill="#fce94f" stroke="#7a6a10" stroke-width="1.5"/>` : '') + '</svg>';
+}
+async function showProperties(paths) {
+  const [infos, vol] = await Promise.all([Promise.all(paths.map((p) => api.preview(p))), api.props(paths[0])]);
+  const one = paths.length === 1 ? infos[0] : null;
+  const name = one ? P.basename(paths[0]) || '/' : plural(paths.length, 'item');
+  const isDir = one?.kind === 'dir';
+  const groups = [];
+  const g1 = [['Name', esc(name)]];
+  if (one) {
+    g1.push(['Type', isDir ? 'Folder (inode/directory)' : esc(typeName({ name, isDir: false }))]);
+    if (isDir) g1.push(['Contents', one.count == null ? 'No access' : plural(one.count, 'item')]);
+  } else {
+    const files = infos.filter((i) => i.ok && i.kind !== 'dir').length;
+    g1.push(['Contents', `${plural(infos.length - files, 'folder')}, ${plural(files, 'file')}`]);
+  }
+  g1.push(['Size', !one || isDir ? '<span data-dirsize>Calculating…</span>' : one.ok ? `${fmtSize(one.size)} (${one.size.toLocaleString()} bytes)` : esc(one.error)]);
+  groups.push(g1);
+  groups.push([['Location', esc(P.dirname(paths[0]))], ...(vol.volume ? [['Volume', esc(vol.volume)]] : [])]);
+  if (one?.ok) groups.push([['Modified', esc(new Date(one.mtime).toLocaleString([], { dateStyle: 'full', timeStyle: 'medium' }))], ['Created', esc(new Date(one.ctime).toLocaleString([], { dateStyle: 'full', timeStyle: 'medium' }))]]);
+  if (vol.total) groups.push([['Free space', fmtSize(vol.free)]]);
+  const grid = groups.map((g) => g.map(([k, v]) => `<dt>${k}:</dt><dd>${v}</dd>`).join('')).join('<div class="np-gap"></div>');
+  const used = vol.total - vol.free;
+  const chart = vol.total ? `<div class="np-chart">${pieSvg(used, vol.total)}<div class="np-legend">
+      <div><i style="background:#fce94f"></i>${fmtSize(used)} used</div>
+      <div><i style="background:#6c9bd2"></i>${fmtSize(vol.free)} free</div>
+      <div class="np-cap">Total capacity: ${fmtSize(vol.total)}</div>
+      <div class="np-cap">Filesystem type: ${esc(vol.fstype || '')}</div></div></div>` : '';
+  const m = one?.ok ? one.mode.padStart(3, '0') : null;
+  const perms = m ? `<dl class="np-grid">
+      <dt>Owner:</dt><dd>${esc(vol.owner || '')}</dd><dt>Access:</dt><dd>${ACCESS[+m[0]]}</dd>
+      <div class="np-gap"></div>
+      <dt>Group:</dt><dd>${esc(vol.group || '')}</dd><dt>Access:</dt><dd>${ACCESS[+m[1]]}</dd>
+      <div class="np-gap"></div>
+      <dt>Others:</dt><dd></dd><dt>Access:</dt><dd>${ACCESS[+m[2]]}</dd>
+      <div class="np-gap"></div>
+      <dt>Text view:</dt><dd class="np-mono">${isDir ? 'd' : '-'}${rwx(m)} (${m})</dd></dl>` : '<p>Not available for several items.</p>';
+  const icon = one ? iconFor({ name, isDir }, { big: true }) : folderSvg();
+  return dialog({
+    title: `${name} Properties`,
+    cls: 'np-modal',
+    html: `<div class="np-tabs"><button class="on" data-np="basic">Basic</button><button data-np="perms">Permissions</button></div>
+      <div class="np-page" data-page="basic"><div class="np-top"><div class="np-icon">${icon}</div><dl class="np-grid">${grid}</dl></div>${chart}</div>
+      <div class="np-page" data-page="perms" hidden><div class="np-top"><div class="np-icon">${icon}</div>${perms}</div></div>
+      <div class="m-actions"><button class="btn" data-copy>Copy path</button><span class="br-sp"></span><button class="btn primary" data-cancel>Close</button></div>`,
+    setup: async (root) => {
+      $('[data-copy]', root).onclick = () => copyPaths(paths);
+      root.querySelectorAll('[data-np]').forEach((b) => { b.onclick = () => {
+        root.querySelectorAll('[data-np]').forEach((x) => x.classList.toggle('on', x === b));
+        root.querySelectorAll('[data-page]').forEach((pg) => { pg.hidden = pg.dataset.page !== b.dataset.np; });
+      }; });
+      const cell = $('[data-dirsize]', root);
+      if (!cell) return;
+      // Folders need a recursive walk; plain files just add their size.
+      const sizes = await Promise.all(paths.map((p, i) => (infos[i].kind === 'dir' ? api.dirSize(p) : { size: infos[i].size || 0, partial: false })));
+      const total = sizes.reduce((a, r) => a + r.size, 0);
+      cell.textContent = `${sizes.some((r) => r.partial) ? 'more than ' : ''}${fmtSize(total)} (${total.toLocaleString()} bytes)`;
+    },
+  });
+}
+
+/* =========================================================
  * Folder notes and backgrounds
  * ======================================================= */
 async function editNote(dir) {
@@ -696,6 +768,26 @@ async function applyIconPack() {
   const theme = S().iconTheme;
   window.Icons.setPack(theme ? await api.resolveIcons(theme, window.Icons.PACK_NAMES) : null);
   if (state.panes.length) renderAll();
+}
+// Video tiles: pull one frame per file (two at a time) and swap it in for the film icon.
+let videoQueue = [], videoRunning = 0;
+function loadVideoThumbs(pane) {
+  for (const f of pane.listEl.querySelectorAll('.v-frame[data-video]')) {
+    const p = f.dataset.video;
+    f.removeAttribute('data-video');
+    videoQueue.push({ p, f });
+  }
+  pumpVideoThumbs();
+}
+function pumpVideoThumbs() {
+  while (videoRunning < 2 && videoQueue.length) {
+    const { p, f } = videoQueue.shift();
+    if (!f.isConnected) continue;
+    videoRunning++;
+    api.videoThumb(p).then((r) => {
+      if (r.ok && f.isConnected) f.innerHTML = `<img src="${esc(r.url)}" alt="" draggable="false">`;
+    }).catch(() => {}).finally(() => { videoRunning--; pumpVideoThumbs(); });
+  }
 }
 // Large images in thumbnail view load from a cached 256 px WebP once one has been made.
 const thumbBusy = new Set();
