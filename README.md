@@ -38,6 +38,16 @@ The package installs to `/opt/nova-commander` and adds a menu entry. Start it fr
 
 Optional: `ffmpegthumbnailer` (video thumbnails), `7zip` or `p7zip-full` (archives), `zstd`.
 
+### Flatpak
+
+Build a Flatpak bundle (needs the `org.freedesktop.Platform` and `Sdk` 26.08 runtimes from Flathub):
+
+```bash
+npm install
+bash flatpak/build-flatpak.sh
+flatpak install --user dist/com.github.FireFoxx150.NovaCommander.flatpak
+```
+
 ## Run from source
 
 Requires Node.js 18 or newer.

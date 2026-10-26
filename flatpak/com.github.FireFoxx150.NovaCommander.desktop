@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Nova Commander
+GenericName=File Manager
+Comment=Dual-pane file manager (drag = move, Ctrl+drag = copy)
+Exec=nova-commander %U
+Icon=com.github.FireFoxx150.NovaCommander
+Terminal=false
+Categories=System;FileTools;FileManager;Utility;
+Keywords=files;folders;explorer;commander;
+StartupWMClass=nova-commander
