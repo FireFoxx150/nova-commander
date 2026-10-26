@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>com.github.FireFoxx150.NovaCommander</id>
+  <name>Nova Commander</name>
+  <summary>Dual-pane dark file manager</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-only</project_license>
+  <developer id="com.github.FireFoxx150">
+    <name>Matthew Allwood</name>
+  </developer>
+  <description>
+    <p>Nova Commander is a dual-pane file manager with columns, list and thumbnail views, tabs, a preview panel, undo, and colour-coded file ages.</p>
+    <p>Drag and drop moves files by default. Hold Ctrl while dragging to copy.</p>
+  </description>
+  <launchable type="desktop-id">com.github.FireFoxx150.NovaCommander.desktop</launchable>
+  <url type="homepage">https://github.com/FireFoxx150/nova-commander</url>
+  <url type="bugtracker">https://github.com/FireFoxx150/nova-commander/issues</url>
+  <content_rating type="oars-1.1" />
+  <releases>
+    <release version="1.3.13" date="2026-10-26" />
+  </releases>
+</component>
