@@ -1,6 +1,8 @@
 # Nova Commander
 
-A modern dark dual-pane file manager for Linux, styled after One Commander.
+A modern dark dual-pane file manager for Linux, with a look inspired by One Commander.
+
+Nova Commander is an independent project and is not affiliated with or endorsed by One Commander.
 
 Drag and drop **moves** files by default. Hold **Ctrl** while dragging to copy.
 
@@ -80,9 +82,10 @@ The package is written to `dist/`. The version comes from `package.json`. Bump i
 - `preload.js`: the bridge between the main process and the interface
 - `renderer/`: the interface (`app.js`, `tools.js`, `icons.js`, `styles.css`, `index.html`)
 - `build/`: packaging script and icon rendering
-- `FEATURES.md`: feature checklist
 - `SECURITY.md`: security policy
 
 ## Licence
 
 GNU General Public License v3.0 only. See [LICENSE](LICENSE).
+
+Third-party licences (including the Lucide icon set) are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
