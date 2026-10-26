@@ -5,18 +5,35 @@
   <summary>Dual-pane dark file manager</summary>
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>GPL-3.0-only</project_license>
-  <developer id="com.github.FireFoxx150">
-    <name>Matthew Allwood</name>
+  <developer id="io.github.firefoxx150">
+    <name>FireFoxx150</name>
   </developer>
   <description>
-    <p>Nova Commander is a dual-pane file manager with columns, list and thumbnail views, tabs, a preview panel, undo, and colour-coded file ages.</p>
+    <p>Nova Commander is a dual-pane file manager with columns, list and thumbnail views, tabs, a preview panel, undo and colour-coded file ages.</p>
     <p>Drag and drop moves files by default. Hold Ctrl while dragging to copy.</p>
+    <ul>
+      <li>Two panes, each with its own tabs</li>
+      <li>Columns, list and thumbnail views, with video frame thumbnails</li>
+      <li>Drag to select, Properties dialog, and file operations with pause and cancel</li>
+      <li>Undo for moves, copies and renames</li>
+    </ul>
   </description>
   <launchable type="desktop-id">com.github.FireFoxx150.NovaCommander.desktop</launchable>
+  <screenshots>
+    <screenshot type="default">
+      <image>https://raw.githubusercontent.com/FireFoxx150/nova-commander/v1.3.14/docs/screenshot.png</image>
+      <caption>Two panes showing a list view and a thumbnail view</caption>
+    </screenshot>
+  </screenshots>
   <url type="homepage">https://github.com/FireFoxx150/nova-commander</url>
   <url type="bugtracker">https://github.com/FireFoxx150/nova-commander/issues</url>
+  <categories>
+    <category>System</category>
+    <category>FileTools</category>
+    <category>FileManager</category>
+  </categories>
   <content_rating type="oars-1.1" />
   <releases>
-    <release version="1.3.13" date="2026-10-26" />
+    <release version="1.3.14" date="2026-10-26" />
   </releases>
 </component>
