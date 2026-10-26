@@ -1,7 +1,7 @@
 {
   "name": "nova-commander",
   "productName": "Nova Commander",
-  "version": "1.3.13",
+  "version": "1.3.14",
   "description": "A modern dark dual-pane file manager inspired by One Commander",
   "main": "main.js",
   "scripts": {
