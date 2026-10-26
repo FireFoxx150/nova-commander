@@ -155,12 +155,13 @@ const placeByPath = (p) => state.places.find((x) => x.path === p);
 function dirLabel(p) {
   if (p === '/') return 'File System';
   if (p === HOME) return state.user;
-  return P.basename(p);
+  // A drive's mount folder shows the drive's name (e.g. "DataDrive8tb") rather than its UUID.
+  return state.drives.find((d) => d.path === p)?.name || P.basename(p);
 }
 
 const windowLayout = () => ({
   dual: state.dual, info: state.info, split: state.split, active: state.active,
-  panes: state.panes.map((p) => ({ activeTab: p.activeTab, tabs: p.tabs.map((t) => ({ path: t.path, view: t.view, sort: t.sort, alias: t.alias, aliasPath: t.aliasPath })) })),
+  panes: state.panes.map((p) => ({ activeTab: p.activeTab, gridSize: p.gridSize, tabs: p.tabs.map((t) => ({ path: t.path, view: t.view, sort: t.sort, alias: t.alias, aliasPath: t.aliasPath })) })),
 });
 function saveState() {
   clearTimeout(saveState.t);
@@ -618,7 +619,7 @@ function buildPane(pane) {
       <div class="s-list"></div>
     </div>
     <div class="info"></div>
-    <div class="pstatus"><span class="ps-count"></span><button class="ps-toggle"></button><span class="ps-sel"></span></div>`;
+    <div class="pstatus"><span class="ps-count"></span><button class="ps-toggle"></button><span class="ps-sel"></span></div><input class="pane-zoom" type="range" min="72" max="320" step="8" title="Thumbnail size (this pane)" aria-label="Thumbnail size">`;
   pane.tabsEl = $('.tabs', pane.el);
   pane.crumbsEl = $('.crumbs', pane.el);
   pane.bodyEl = $('.pane-body', pane.el);
@@ -651,6 +652,17 @@ function renderPane(pane) {
   renderTabs(pane);
   renderToolbar(pane);
   renderBody(pane);
+  // The size slider runs down the pane's right edge and only applies to thumbnail view.
+  const zoom = $('.pane-zoom', pane.el);
+  zoom.hidden = tabOf(pane).view !== 'grid';
+  zoom.value = pane.gridSize || S().gridSize;
+}
+// Thumbnail size for one pane; the Settings slider is the default for both panes.
+function setPaneZoom(pane, size) {
+  pane.gridSize = Math.max(72, Math.min(320, size));
+  $('.list-body.grid', pane.listEl)?.style.setProperty('--tile', `${pane.gridSize}px`);
+  $('.pane-zoom', pane.el).value = pane.gridSize;
+  saveState();
 }
 
 function renderTabs(pane) {
@@ -868,12 +880,16 @@ function listRowHtml(e, col, focused, cols) {
 
 // Thumbnail view tiles: images show the picture itself, everything else a big icon.
 const THUMB_EXT = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg', 'avif', 'ico', 'apng']);
+const VIDEO_THUMB_EXT = new Set(['mp4', 'webm', 'mov', 'mkv', 'avi', 'wmv', 'flv', 'm4v', 'mpg', 'mpeg', 'ogv', '3gp']);
 function gridTileHtml(e, col, focused) {
   const place = e.isDir ? placeByPath(e.path) : null;
   // Big images get their src from the thumbnail cache (cacheThumbs) instead of the full file.
   const cached = S().thumbCache && e.size > 150 * 1024;
+  // Videos start as their file icon; loadVideoThumbs swaps in a real frame once it's extracted.
+  const isVideo = !e.isDir && !e.broken && VIDEO_THUMB_EXT.has(extOf(e.name));
   const thumb = !e.isDir && !e.broken && THUMB_EXT.has(extOf(e.name))
     ? `<img loading="lazy" decoding="async" ${cached ? 'data-full' : 'src'}="${esc(fileUri(e.path))}" alt="" draggable="false">`
+    : isVideo ? `<span class="v-frame" data-video="${esc(e.path)}">${iconFor(e, { big: true })}</span>`
     : iconFor(e, { big: true, special: place && place.id !== 'trash' ? place.id : null });
   return `<div ${rowAttrs(e, col, focused)} title="${esc(e.name)}"><span class="r-icon g-thumb">${thumb}</span><span class="r-name">${esc(e.name)}</span></div>`;
 }
@@ -934,13 +950,13 @@ function renderBody(pane) {
   const cols = grid ? [] : listColumns(pane);
   pane.colsKey = cols.map((c) => c.id).join();
   if (!col.error && vis.length) body = vis.map((e) => (grid ? gridTileHtml(e, col, focused) : listRowHtml(e, col, focused, cols))).join('');
-  queueMicrotask(() => { renderHeadInfo(pane); queueDirSizes(pane); queueMeta(pane, vis); if (grid) cacheThumbs(pane); });
+  queueMicrotask(() => { renderHeadInfo(pane); queueDirSizes(pane); queueMeta(pane, vis); if (grid) { cacheThumbs(pane); loadVideoThumbs(pane); } });
   const note = state.notes[col.path];
   const noteHtml = note ? `<div class="folder-note" data-note title="Click to edit this folder's note">${line('documents')}<span>${esc(note)}</span></div>` : '';
   const bg = state.folderBg[col.path];
   const bgAttr = bg ? ` style="--bg-img:url('${esc(fileUri(bg))}')"` : '';
   if (grid) {
-    pane.listEl.innerHTML = `${noteHtml}<div class="list-body grid ${focused ? 'focused' : ''}${bg ? ' has-bg' : ''}" data-col="${lastIdx}" data-path="${esc(col.path)}" style="--tile:${S().gridSize}px;${bg ? `--bg-img:url('${esc(fileUri(bg))}')` : ''}">${body}</div>`;
+    pane.listEl.innerHTML = `${noteHtml}<div class="list-body grid ${focused ? 'focused' : ''}${bg ? ' has-bg' : ''}" data-col="${lastIdx}" data-path="${esc(col.path)}" style="--tile:${pane.gridSize || S().gridSize}px;${bg ? `--bg-img:url('${esc(fileUri(bg))}')` : ''}">${body}</div>`;
     $('.list-body', pane.listEl).scrollTop = top;
     return;
   }
@@ -1748,6 +1764,70 @@ function applySplit() {
 /* =========================================================
  * Pane events
  * ======================================================= */
+// Left-drag from empty space (or, in list view, from the Ext/Age/Date/Size cells of a row)
+// draws a selection box. Ctrl/Shift adds to the existing selection.
+function bindMarquee(pane) {
+  pane.bodyEl.addEventListener('mousedown', (e) => {
+    if (e.button !== 0) return;
+    const box = e.target.closest('.list-body, .pcol');
+    if (!box || e.target.closest('.rename-input, .list-head, [data-note]')) return;
+    const row = e.target.closest('.row[data-path]');
+    const listCells = !box.classList.contains('grid') && box.classList.contains('list-body');
+    if (row && !(listCells && !e.target.closest('.r-name, .r-icon'))) return;
+    if (e.offsetX > box.clientWidth) return; // on the scrollbar
+    e.preventDefault(); // no native file drag or text selection from here
+    const tab = tabOf(pane);
+    const k = +box.dataset.col;
+    const col = tab.columns[k];
+    if (!col) return;
+    const keep = e.ctrlKey || e.metaKey || e.shiftKey ? new Set(col.sel) : new Set();
+    const at = (ev) => { const r = box.getBoundingClientRect(); return { x: ev.clientX - r.left + box.scrollLeft, y: ev.clientY - r.top + box.scrollTop }; };
+    const start = at(e);
+    let rectEl = null, hit = new Set();
+    const move = (ev) => {
+      const cur = at(ev);
+      if (!rectEl && Math.hypot(cur.x - start.x, cur.y - start.y) < 4) return;
+      const br = box.getBoundingClientRect();
+      // shortcut: scrolls only while the mouse moves, upgrade to a timer if long lists feel slow.
+      if (ev.clientY > br.bottom - 16) box.scrollTop += 20; else if (ev.clientY < br.top + 16) box.scrollTop -= 20;
+      if (!rectEl) { rectEl = document.createElement('div'); rectEl.className = 'marquee'; document.body.appendChild(rectEl); }
+      const x1 = Math.min(start.x, cur.x), x2 = Math.max(start.x, cur.x), y1 = Math.min(start.y, cur.y), y2 = Math.max(start.y, cur.y);
+      const clip = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+      const L = clip(x1 - box.scrollLeft + br.left, br.left, br.right), R = clip(x2 - box.scrollLeft + br.left, br.left, br.right);
+      const T = clip(y1 - box.scrollTop + br.top, br.top, br.bottom), B = clip(y2 - box.scrollTop + br.top, br.top, br.bottom);
+      Object.assign(rectEl.style, { left: `${L}px`, top: `${T}px`, width: `${R - L}px`, height: `${B - T}px` });
+      hit = new Set(keep);
+      for (const r of box.querySelectorAll('.row[data-path]')) {
+        const rr = r.getBoundingClientRect();
+        const rx = rr.left - br.left + box.scrollLeft, ry = rr.top - br.top + box.scrollTop;
+        const inside = rx < x2 && rx + rr.width > x1 && ry < y2 && ry + rr.height > y1;
+        if (inside) hit.add(r.dataset.path);
+        r.classList.toggle('sel', hit.has(r.dataset.path));
+      }
+    };
+    const up = () => {
+      document.removeEventListener('mousemove', move);
+      document.removeEventListener('mouseup', up);
+      if (!rectEl) return; // plain click: the click handler deals with it
+      rectEl.remove();
+      pane.marqueeDone = true;
+      setTimeout(() => { pane.marqueeDone = false; }, 0); // only swallow this drag's own click
+      if (hit.size === 1) { selectEntry(pane, tab, k, [...hit][0]); return; }
+      col.sel = hit;
+      const vis = visible(tab, col).filter((x) => hit.has(x.path));
+      col.cursor = col.anchor = vis.length ? vis[vis.length - 1].path : null;
+      tab.focusCol = k;
+      if (tab.view === 'columns') { tab.columns.length = k + 1; tab.token++; }
+      syncPath(tab);
+      renderPane(pane);
+      updatePreview();
+      renderSidebarCurrent();
+    };
+    document.addEventListener('mousemove', move);
+    document.addEventListener('mouseup', up);
+  });
+}
+
 function colIndexFrom(el, tab) {
   const c = el.closest('[data-col]');
   return c ? +c.dataset.col : tab.columns.length - 1;
@@ -1788,6 +1868,7 @@ function bindPane(pane) {
   });
   pane.el.querySelector('.addr [data-act="dual"]').addEventListener('click', toggleDual);
   pane.statusEl.querySelector('.ps-toggle').addEventListener('click', toggleInfo);
+  pane.el.querySelector('.pane-zoom').addEventListener('input', (e) => setPaneZoom(pane, +e.target.value));
 
   pane.crumbsEl.addEventListener('click', (e) => {
     const c = e.target.closest('[data-crumb]');
@@ -1833,9 +1914,7 @@ function bindPane(pane) {
   pane.listEl.addEventListener('wheel', (e) => {
     if (!(e.ctrlKey || e.metaKey) || tabOf(pane).view !== 'grid') return;
     e.preventDefault();
-    S().gridSize = Math.max(72, Math.min(240, S().gridSize + (e.deltaY < 0 ? 12 : -12)));
-    for (const p of visiblePanes()) $('.list-body.grid', p.listEl)?.style.setProperty('--tile', `${S().gridSize}px`);
-    saveState();
+    setPaneZoom(pane, (pane.gridSize || S().gridSize) + (e.deltaY < 0 ? 12 : -12));
   }, { passive: false });
   pane.tabsEl.addEventListener('contextmenu', (e) => {
     const t = e.target.closest('[data-tab]');
@@ -1862,7 +1941,9 @@ function bindPane(pane) {
   });
 
   const body = pane.bodyEl;
+  bindMarquee(pane);
   body.addEventListener('click', (e) => {
+    if (pane.marqueeDone) { pane.marqueeDone = false; return; }
     if (e.target.closest('.rename-input') || e.target.closest('.cur-bar') || e.target.closest('.cur-title')) return;
     const tab = tabOf(pane);
     if (e.target.closest('[data-note]')) { editNote(currentDir(tab)); return; }
@@ -1928,7 +2009,7 @@ function swatchRow(it, i) {
 }
 function showMenu(x, y, items) {
   menuEl.innerHTML = items.map((it, i) => it === '-' ? '<div class="msep"></div>' : it.swatches ? swatchRow(it, i) :
-    `<div class="mi ${it.danger ? 'danger' : ''} ${it.disabled ? 'disabled' : ''}" data-i="${i}">${line(it.icon || '')}<span class="mi-label">${esc(it.label)}</span>${it.key ? `<span class="mi-key">${it.key}</span>` : ''}</div>`).join('');
+    `<div class="mi ${it.danger ? 'danger' : ''} ${it.disabled ? 'disabled' : ''}" data-i="${i}">${line(it.icon || '')}<span class="mi-label">${esc(it.label)}</span>${it.key ? `<span class="mi-key">${it.key}</span>` : ''}${it.sub ? '<span class="mi-key">▸</span>' : ''}</div>`).join('');
   menuEl.hidden = false;
   const r = menuEl.getBoundingClientRect();
   menuEl.style.left = Math.min(x, innerWidth - r.width - 6) + 'px';
@@ -1939,6 +2020,7 @@ function showMenu(x, y, items) {
     const it = items[+mi.dataset.i];
     const sw = e.target.closest('[data-sw]');
     if (it.swatches && !sw) return;
+    if (it.sub) { showMenu(x, y, [{ label: 'Back', icon: 'back', act: () => showMenu(x, y, items) }, '-', ...it.sub]); return; }
     hideMenu();
     if (it.swatches) it.act(+sw.dataset.sw); else it.act();
   };
@@ -1994,6 +2076,7 @@ function itemMenu(x, y, pane, tab, col) {
   items.push('-');
   items.push({ label: 'Move to Trash', icon: 'trash', key: kb('trash'), danger: true, act: () => trashPaths(paths) });
   items.push({ label: 'Delete permanently', icon: 'x', key: kb('deletePerm'), danger: true, act: () => deletePermanently(paths) });
+  items.push('-', { label: 'Properties', icon: 'info', key: kb('properties'), act: () => showProperties(paths) });
   showMenu(x, y, items);
 }
 
@@ -2046,12 +2129,14 @@ async function backgroundMenu(x, y, pane, tab, dir) {
     { label: 'File Automator…', icon: 'wand', key: kb('automator'), act: () => fileAutomator(dir, tab.columns.find((c) => c.path === dir)?.entries || []) },
     ...scriptItems([], dir),
     '-',
-    ...sortItems(pane, tab),
+    { label: 'Sort by', icon: 'sort', sub: sortItems(pane, tab) },
     '-',
     { label: 'Add to Favorites', icon: 'star', key: kb('addFavorite'), act: () => addFavorites([dir]) },
     { label: 'Open in terminal', icon: 'terminal', act: () => openTerminal(dir) },
     { label: 'Copy folder path', icon: 'link', act: () => copyPaths([dir]) },
     { label: 'Open in new tab', icon: 'tab', act: () => addTab(pane, dir) },
+    '-',
+    { label: 'Properties', icon: 'info', key: kb('properties'), act: () => showProperties([dir]) },
   ]);
 }
 
@@ -2076,7 +2161,7 @@ function paneMenu(x, y, pane) {
     { label: 'Choose columns…', icon: 'columns', act: chooseColumns },
     { label: S().layout === 'stacked' ? 'Panes side by side' : 'Panes above each other', icon: 'dual', act: () => { S().layout = S().layout === 'stacked' ? 'side' : 'stacked'; settingsChanged(); applySplit(); } },
     '-',
-    ...sortItems(pane, tab),
+    { label: 'Sort by', icon: 'sort', sub: sortItems(pane, tab) },
     '-',
     { label: 'Add to Favorites', icon: 'star', key: kb('addFavorite'), act: () => addFavorites([dir]) },
     { label: 'Open in terminal', icon: 'terminal', act: () => openTerminal(dir) },
@@ -2160,6 +2245,7 @@ const ACTIONS = [
   { id: 'newFolderFromSel', label: 'New folder with selection', keys: [], run: ({ col }) => col && newFolderWithSelection(col, sel()) },
   { id: 'trash', label: 'Move to Trash', keys: ['Delete'], run: () => trashPaths(sel()) },
   { id: 'deletePerm', label: 'Delete permanently', keys: ['Shift+Delete'], run: () => deletePermanently(sel()) },
+  { id: 'properties', label: 'Properties', keys: ['Alt+Enter'], run: ({ tab }) => { const ps = sel(); showProperties(ps.length ? ps : [currentDir(tab)]); } },
   { id: 'moveOther', label: 'Move to other pane', keys: ['F6'], run: () => toOtherPane('move') },
   { id: 'copyOther', label: 'Copy to other pane', keys: ['Shift+F6'], run: () => toOtherPane('copy') },
   { id: 'dropList', label: 'Add to Drop List', keys: ['Alt+D'], run: ({ pane, col }) => { const ps = sel(); if (ps.length) addToDropList(selectionItems(ps, (p) => (pane.search.open ? pane.search.map : col.map).get(p))); } },
@@ -2629,9 +2715,13 @@ function renderOps() {
   const show = ops.length && (opsPinned || ((slow || el.dataset.seen) && !opsDismissed));
   el.hidden = !show;
   if (show) {
+    // Always a single line at the bottom of the window: just the current operation.
     const finished = ops.length - active.length;
-    el.innerHTML = `<div class="ops-head"><span>File operations</span>${finished ? '<button class="ops-clear" data-ops="clear">Clear finished</button>' : ''}<button class="ib" data-ops="close" title="Hide">${line('x')}</button></div>`
-      + `<div class="ops-list">${ops.slice(-12).map(opRowHtml).join('')}</div>`;
+    const main = ops.find((o) => o.status === 'running') || active[0] || ops[ops.length - 1];
+    el.innerHTML = `<div class="ops-bar">${opRowHtml(main)}`
+      + (active.length > 1 ? `<span class="ops-clear">${active.length - 1} more queued</span>` : '')
+      + (finished ? '<button class="ops-clear" data-ops="clear">Clear finished</button>' : '')
+      + `<button class="ib" data-ops="close" title="Hide">${line('x')}</button></div>`;
   }
   $('#toasts').style.bottom = show ? `${el.offsetHeight + 44}px` : '';
 }
@@ -3232,6 +3322,7 @@ function searchMenu(x, y, pane) {
   items.push('-');
   items.push({ label: 'Move to Trash', icon: 'trash', key: kb('trash'), danger: true, act: () => trashPaths(paths) });
   items.push({ label: 'Delete permanently', icon: 'x', key: kb('deletePerm'), danger: true, act: () => deletePermanently(paths) });
+  items.push('-', { label: 'Properties', icon: 'info', key: kb('properties'), act: () => showProperties(paths) });
   showMenu(x, y, items);
 }
 
@@ -3389,7 +3480,7 @@ function openSettings() {
     <label class="st-field"><span>Accent colour</span><input type="color" data-set="accent" value="${s.accent || getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#f7801d'}"><button class="btn" data-accent-reset ${s.accent ? '' : 'disabled'}>Theme default</button></label>
     <label class="st-field"><span>Row height</span><select data-set="rowHeight">${opt('rowHeight', 20, 'Compact')}${opt('rowHeight', 23, 'Normal')}${opt('rowHeight', 28, 'Comfortable')}</select></label>
     <label class="st-field"><span>Text size</span><input type="range" min="12" max="16" step="0.5" data-set="fontSize" value="${s.fontSize}"><output>${s.fontSize}px</output></label>
-    <label class="st-field"><span>Thumbnail size</span><input type="range" min="72" max="240" step="8" data-set="gridSize" value="${s.gridSize}"><output>${s.gridSize}px</output></label>
+    <label class="st-field"><span>Thumbnail size</span><input type="range" min="72" max="320" step="8" data-set="gridSize" value="${s.gridSize}"><output>${s.gridSize}px</output></label>
     <label class="st-field"><span>Pane layout</span><select data-set="layout">${opt('layout', 'side', 'Side by side')}${opt('layout', 'stacked', 'Above each other')}</select></label>
     <label class="st-field"><span>Parent column width</span><input type="range" min="130" max="340" step="10" data-set="parentColWidth" value="${s.parentColWidth}"><output>${s.parentColWidth}px</output></label>
     ${chk('expandColumns', 'Widen a parent column to fit long names while the mouse rests on it')}
@@ -3500,6 +3591,7 @@ function openSettings() {
         else s[k] = el.value;
         if (k === 'accent') $('[data-accent-reset]', root).disabled = false;
         if (k === 'recentMax') state.recent = state.recent.slice(0, s.recentMax);
+        if (k === 'gridSize') for (const p of state.panes) p.gridSize = undefined; // slider sets both panes
         const out = el.parentElement.querySelector('output');
         if (out) out.textContent = `${el.value}px`;
         settingsChanged();
@@ -3687,7 +3779,7 @@ async function init() {
   for (let i = 0; i < 2; i++) {
     const s = saved?.panes?.[i];
     const tabs = s?.tabs?.length ? s.tabs.map((t) => Object.assign(newTab(t.path, t.view, t.sort), { alias: t.alias || '', aliasPath: t.aliasPath || '' })) : [newTab(i === 0 ? HOME : downloads)];
-    const pane = { index: i, el: $('#pane' + i), tabs, activeTab: Math.min(s?.activeTab || 0, tabs.length - 1), closed: [] };
+    const pane = { index: i, el: $('#pane' + i), tabs, activeTab: Math.min(s?.activeTab || 0, tabs.length - 1), closed: [], gridSize: s?.gridSize };
     state.panes.push(pane);
     buildPane(pane);
   }
