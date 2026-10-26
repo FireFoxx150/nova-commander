@@ -6,6 +6,8 @@ Nova Commander is an independent project and is not affiliated with or endorsed 
 
 Drag and drop **moves** files by default. Hold **Ctrl** while dragging to copy.
 
+![Nova Commander with a list view and a thumbnail view side by side](docs/screenshot.png)
+
 ## Features
 
 - **Dual-pane layout** with a resizable divider, side by side or stacked
