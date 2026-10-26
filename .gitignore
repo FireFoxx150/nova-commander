@@ -1,3 +1,6 @@
 node_modules/
 dist/
 FEATURES.md
+.flatpak-builder/
+flatpak/.build/
+flatpak/repo/

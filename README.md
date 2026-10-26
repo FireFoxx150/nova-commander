@@ -40,12 +40,12 @@ Optional: `ffmpegthumbnailer` (video thumbnails), `7zip` or `p7zip-full` (archiv
 
 ### Flatpak
 
-Build a Flatpak bundle (needs the `org.freedesktop.Platform` and `Sdk` 26.08 runtimes from Flathub):
+Requires `flatpak-builder` and the `org.freedesktop.Platform` and `Sdk` 26.08 runtimes from Flathub.
 
 ```bash
 npm install
-bash flatpak/build-flatpak.sh
-flatpak install --user dist/com.github.FireFoxx150.NovaCommander.flatpak
+flatpak-builder --user --install --force-clean --repo=flatpak/repo flatpak/.build flatpak/com.github.FireFoxx150.NovaCommander.yml
+flatpak build-bundle flatpak/repo dist/com.github.FireFoxx150.NovaCommander.flatpak com.github.FireFoxx150.NovaCommander master
 ```
 
 ## Run from source
