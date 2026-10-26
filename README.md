@@ -85,4 +85,4 @@ The package is written to `dist/`. The version comes from `package.json`. Bump i
 
 ## Licence
 
-Not yet chosen.
+GNU General Public License v3.0 only. See [LICENSE](LICENSE).
