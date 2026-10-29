@@ -463,6 +463,65 @@ async function editNote(dir) {
   saveState();
   for (const p of state.panes) renderPane(p);
 }
+// Custom icons: folders by path, file types by extension. Images come from a file picker.
+async function chooseIcon(kind, key) {
+  const img = await api.pickImage();
+  if (img) setIcon(kind, key, img);
+}
+function setIcon(kind, key, img) {
+  const map = kind === 'folder' ? state.folderIcons : state.typeIcons;
+  if (img) map[key] = img; else delete map[key];
+  syncIcons();
+  saveState();
+  for (const p of state.panes) renderPane(p);
+}
+function syncIcons() {
+  const urls = (m) => Object.fromEntries(Object.entries(m).map(([k, v]) => [k, fileUri(v)]));
+  window.Icons.setCustom({ folders: urls(state.folderIcons), ext: urls(state.typeIcons) });
+}
+
+// Folder to-do list: a small checklist shown in the folder header.
+function editTodos(dir) {
+  return new Promise((resolve) => {
+    const items = () => (state.todos[dir] ||= []);
+    const bd = document.createElement('div');
+    bd.className = 'modal-backdrop';
+    bd.innerHTML = `<div class="modal todo-modal" role="dialog"><h3>To-do: ${esc(dirLabel(dir))}</h3>
+      <ul class="todo-list"></ul>
+      <input class="m-input todo-add" placeholder="Add an item, then press Enter" spellcheck="false">
+      <div class="m-actions"><button class="btn primary" data-close>Done</button></div></div>`;
+    const ul = $('.todo-list', bd), input = $('.todo-add', bd);
+    const draw = () => {
+      ul.innerHTML = items().map((t, i) => `<li><label><input type="checkbox" data-i="${i}" ${t.done ? 'checked' : ''}><span class="${t.done ? 'done' : ''}">${esc(t.text)}</span></label><button class="ib" data-del="${i}" title="Remove">${line('x')}</button></li>`).join('') || '<li class="empty">Nothing yet</li>';
+    };
+    const close = () => {
+      if (!items().length) delete state.todos[dir];
+      bd.remove();
+      document.removeEventListener('keydown', onKey, true);
+      saveState();
+      for (const p of state.panes) renderPane(p);
+      resolve();
+    };
+    const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); } };
+    bd.addEventListener('click', (e) => {
+      if (e.target === bd || e.target.closest('[data-close]')) return close();
+      const del = e.target.closest('[data-del]');
+      if (del) { items().splice(+del.dataset.del, 1); draw(); }
+    });
+    bd.addEventListener('change', (e) => {
+      const cb = e.target.closest('[data-i]');
+      if (cb) { items()[+cb.dataset.i].done = cb.checked; draw(); }
+    });
+    input.addEventListener('keydown', (e) => {
+      e.stopPropagation();
+      if (e.key === 'Enter' && input.value.trim()) { items().push({ text: input.value.trim(), done: false }); input.value = ''; draw(); }
+    });
+    document.addEventListener('keydown', onKey, true);
+    $('#modal-root').appendChild(bd);
+    draw();
+    input.focus();
+  });
+}
 function setFolderBg(dir, img) {
   if (img) state.folderBg[dir] = img; else delete state.folderBg[dir];
   saveState();

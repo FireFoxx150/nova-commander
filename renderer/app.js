@@ -68,7 +68,7 @@ function ageInfo(ms) {
 /* =========================================================
  * State
  * ======================================================= */
-const THEMES = [['black', 'Black'], ['nord', 'Nord'], ['midnight', 'Midnight']];
+const THEMES = [['black', 'Black'], ['nord', 'Nord'], ['midnight', 'Midnight'], ['light', 'Light']];
 const STYLE_VERSION = 2;
 // Colour tags, indexed 1..7 (stored by index in the main process). Alt+1…7 toggles, Alt+0 clears.
 const TAGS = [null, ['Red', '#f05252'], ['Orange', '#fb8c2c'], ['Yellow', '#f5cf3f'], ['Green', '#3fc56b'], ['Blue', '#3b8cf6'], ['Purple', '#a66cf0'], ['Grey', '#9aa0a6']];
@@ -105,7 +105,7 @@ const DEFAULT_SETTINGS = {
   columns: { ext: true, age: true, mtime: true, ctime: false, size: true, dims: false, taken: false, duration: false, tag: false },
 };
 // Shared between windows (stored in window 1's record); everything else is per window.
-const SHARED_KEYS = ['settings', 'favGroups', 'recent', 'dropList', 'savedWindows', 'notes', 'folderBg', 'recentDest', 'collapsed', 'rules', 'theme', 'showHidden'];
+const SHARED_KEYS = ['settings', 'favGroups', 'recent', 'dropList', 'savedWindows', 'notes', 'folderBg', 'folderIcons', 'typeIcons', 'todos', 'recentDest', 'collapsed', 'rules', 'theme', 'showHidden'];
 const QUERY = new URLSearchParams(location.search);
 const MAIN_WIN = (QUERY.get('w') || '1') === '1';
 
@@ -123,6 +123,9 @@ const state = {
   savedWindows: [], // { name, dual, split, panes }
   notes: {}, // folder path -> note text
   folderBg: {}, // folder path -> background image path
+  folderIcons: {}, // folder path -> custom icon image
+  typeIcons: {}, // extension -> custom icon image
+  todos: {}, // folder path -> [{ text, done }]
   recentDest: [], // recent copy/move destinations, newest first
   collapsed: {}, // sidebar section id -> true
   rules: [], // File Automator rules
@@ -952,7 +955,9 @@ function renderBody(pane) {
   if (!col.error && vis.length) body = vis.map((e) => (grid ? gridTileHtml(e, col, focused) : listRowHtml(e, col, focused, cols))).join('');
   queueMicrotask(() => { renderHeadInfo(pane); queueDirSizes(pane); queueMeta(pane, vis); if (grid) { cacheThumbs(pane); loadVideoThumbs(pane); } });
   const note = state.notes[col.path];
-  const noteHtml = note ? `<div class="folder-note" data-note title="Click to edit this folder's note">${line('documents')}<span>${esc(note)}</span></div>` : '';
+  const todos = state.todos[col.path] || [];
+  const todoHtml = todos.length ? `<div class="folder-todo" data-todo title="Open this folder's to-do list"><span class="todo-count">${todos.filter((t) => t.done).length}/${todos.length}</span><span>To-do</span></div>` : '';
+  const noteHtml = (note ? `<div class="folder-note" data-note title="Click to edit this folder's note">${line('documents')}<span>${esc(note)}</span></div>` : '') + todoHtml;
   const bg = state.folderBg[col.path];
   const bgAttr = bg ? ` style="--bg-img:url('${esc(fileUri(bg))}')"` : '';
   if (grid) {
@@ -1947,6 +1952,7 @@ function bindPane(pane) {
     if (e.target.closest('.rename-input') || e.target.closest('.cur-bar') || e.target.closest('.cur-title')) return;
     const tab = tabOf(pane);
     if (e.target.closest('[data-note]')) { editNote(currentDir(tab)); return; }
+    if (e.target.closest('[data-todo]')) { editTodos(currentDir(tab)); return; }
     const sortH = e.target.closest('[data-sort]');
     if (sortH) { setSort(pane, tab, sortH.dataset.sort); return; }
     if (e.target.closest('.list-head')) return;
@@ -2066,6 +2072,15 @@ function itemMenu(x, y, pane, tab, col) {
   if (single && !single.isDir) items.push({ label: 'Save as template', icon: 'template', act: () => saveAsTemplate(single.path) });
   if (paths.some((p) => IMG_RE.test(p))) items.push({ label: 'Convert / resize images…', icon: 'image', key: kb('images'), act: () => batchImages(paths, col.path) });
   if (single && IMG_RE.test(single.name)) items.push({ label: 'Use as folder background', icon: 'image', act: () => setFolderBg(col.path, single.path) });
+  if (single?.isDir) {
+    items.push({ label: 'Change folder icon…', icon: 'image', act: () => chooseIcon('folder', single.path) });
+    if (state.folderIcons[single.path]) items.push({ label: 'Reset folder icon', icon: 'x', act: () => setIcon('folder', single.path, null) });
+  }
+  if (single && !single.isDir && extOf(single.name)) {
+    const ext = extOf(single.name);
+    items.push({ label: `Use image as icon for .${ext} files…`, icon: 'image', act: () => chooseIcon('ext', ext) });
+    if (state.typeIcons[ext]) items.push({ label: `Reset icon for .${ext} files`, icon: 'x', act: () => setIcon('ext', ext, null) });
+  }
   items.push('-', ...scriptItems(paths, col.path));
   items.push('-');
   items.push({ label: 'Rename', icon: 'rename', key: kb('rename'), disabled: !single, act: () => startRename(pane, single.path) });
@@ -2125,6 +2140,7 @@ async function backgroundMenu(x, y, pane, tab, dir) {
     { label: 'Refresh', icon: 'refresh', key: kb('refresh'), act: () => refreshDir(dir) },
     '-',
     { label: state.notes[dir] ? 'Edit folder note…' : 'Add folder note…', icon: 'note', key: kb('note'), act: () => editNote(dir) },
+    { label: 'To-do list…', icon: 'note', act: () => editTodos(dir) },
     ...(state.folderBg[dir] ? [{ label: 'Remove folder background', icon: 'image', act: () => setFolderBg(dir, null) }] : []),
     { label: 'File Automator…', icon: 'wand', key: kb('automator'), act: () => fileAutomator(dir, tab.columns.find((c) => c.path === dir)?.entries || []) },
     ...scriptItems([], dir),
@@ -3750,7 +3766,8 @@ async function init() {
       const layout = (saved.savedWindows || []).find((w) => w.name === QUERY.get('saved'));
       Object.assign(saved, { dual: true, info: false, split: 0.5, active: 0, panes: null }, layout || {});
     }
-    for (const k of ['savedWindows', 'notes', 'folderBg', 'recentDest', 'collapsed', 'rules']) if (saved[k]) state[k] = saved[k];
+    for (const k of ['savedWindows', 'notes', 'folderBg', 'folderIcons', 'typeIcons', 'todos', 'recentDest', 'collapsed', 'rules']) if (saved[k]) state[k] = saved[k];
+    syncIcons();
     state.dual = saved.dual ?? true;
     state.info = saved.info ?? true;
     state.showHidden = !!saved.showHidden;

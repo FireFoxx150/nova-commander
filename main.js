@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, shell, clipboard, Tray, Menu, globalShortcut } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, clipboard, Tray, Menu, globalShortcut, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const fsp = fs.promises;
@@ -1724,3 +1724,8 @@ ipcMain.on('win:min', (e) => winOf(e)?.minimize());
 ipcMain.on('win:max', (e) => { const w = winOf(e); if (w) (w.isMaximized() ? w.unmaximize() : w.maximize()); });
 ipcMain.on('win:close', (e) => winOf(e)?.close());
 ipcMain.handle('win:isMax', (e) => !!winOf(e)?.isMaximized());
+// Pick an image file for a custom folder or file-type icon.
+ipcMain.handle('dialog:pickImage', async (e) => {
+  const r = await dialog.showOpenDialog(winOf(e) || undefined, { properties: ['openFile'], filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'ico'] }] });
+  return r.canceled ? null : r.filePaths[0];
+});
