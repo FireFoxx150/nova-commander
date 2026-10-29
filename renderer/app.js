@@ -1056,7 +1056,7 @@ function renderSidebar() {
   state.favGroups.forEach((g, gi) => {
     let body = g.items.length ? '' : `<div class="sb-empty">Drop folders here or press +</div>`;
     g.items.forEach((f, ii) => {
-      body += `<div class="sb-item" draggable="true" data-nav="${esc(f.path)}" data-drop="${esc(f.path)}" data-fav="${gi}:${ii}" title="${esc(f.path)}"><span class="si-icon folder">${folderSvg()}</span><span class="si-name">${esc(f.alias || dirLabel(f.path))}</span></div>`;
+      body += `<div class="sb-item" draggable="true" data-nav="${esc(f.path)}" data-drop="${esc(f.path)}" data-fav="${gi}:${ii}" title="${esc(f.path)}"><span class="si-icon folder">${iconFor({ name: P.basename(f.path), path: f.path, isDir: true })}</span><span class="si-name">${esc(f.alias || dirLabel(f.path))}</span></div>`;
     });
     html += sbSection(`fav:${g.name}`, g.name, body, { head: `<button class="ib" data-fav-add="${gi}" title="Add current folder to ${esc(g.name)}">${line('plus')}</button>`, attrs: `data-drop="fav:${gi}" data-group="${gi}"` });
   });
