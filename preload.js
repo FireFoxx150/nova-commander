@@ -61,6 +61,7 @@ contextBridge.exposeInMainWorld('api', {
   putThumb: (key, bytes) => invoke('thumb:put', key, bytes),
   thumbStats: (clear) => invoke('thumb:stats', clear),
   videoThumb: (p) => invoke('thumb:video', p),
+  pickImage: () => invoke('dialog:pickImage'),
   writeNew: (dir, name, bytes) => invoke('fs:writeNew', dir, name, bytes),
   mediaMeta: (paths) => invoke('fs:mediaMeta', paths),
   probe: (p) => invoke('fs:probe', p),

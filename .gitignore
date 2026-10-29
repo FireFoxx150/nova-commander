@@ -4,3 +4,5 @@ FEATURES.md
 .flatpak-builder/
 flatpak/.build/
 flatpak/repo/
+flathub-build/
+flathub-repo/

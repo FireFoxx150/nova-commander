@@ -166,8 +166,15 @@
     return pack[`ext:${extOf(entry.name)}`] || pack[`cat:${category(entry)}`] || pack['cat:file'];
   }
 
+  // User-chosen icons: folder path -> image URL, and extension -> image URL. Set by the app.
+  let custom = { folders: {}, ext: {} };
+  function customFor(entry) {
+    return entry.isDir ? custom.folders[entry.path] : custom.ext[extOf(entry.name)];
+  }
   function iconFor(entry, { big = false, special = null } = {}) {
     const cat = category(entry);
+    const own = customFor(entry);
+    if (own) return `<img class="pk" src="${own}" alt="" draggable="false">`;
     const packed = packIcon(entry, special);
     if (packed) return `<img class="pk" src="${packed}" alt="" draggable="false">`;
     if (cat === 'folder') return folderSvg(false, special ? SPECIAL[special] : null, special);
@@ -176,5 +183,5 @@
     return fileSvg(color, big && ext && ext.length <= 4 ? ext.toUpperCase() : null);
   }
 
-  window.Icons = { iconFor, line, category, typeName, extOf, folderSvg, colorFor: (cat) => (CATS[cat] ? CATS[cat].c : '#6b7280'), PACK_NAMES, setPack: (p) => { pack = p && Object.keys(p).length ? p : null; } };
+  window.Icons = { iconFor, line, category, typeName, extOf, folderSvg, colorFor: (cat) => (CATS[cat] ? CATS[cat].c : '#6b7280'), PACK_NAMES, setPack: (p) => { pack = p && Object.keys(p).length ? p : null; }, setCustom: (c) => { custom = c; } };
 })();
