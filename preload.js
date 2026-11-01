@@ -75,6 +75,12 @@ contextBridge.exposeInMainWorld('api', {
   videoThumb: (p) => invoke('thumb:video', p),
   pickImage: () => invoke('dialog:pickImage'),
   pickFiles: () => invoke('dialog:pickFiles'),
+  cloud: {
+    status: () => invoke('cloud:status'),
+    mount: (name, opts) => invoke('cloud:mount', name, opts),
+    unmount: (name) => invoke('cloud:unmount', name),
+    onChanged: (fn) => ipcRenderer.on('cloud:changed', () => fn()),
+  },
   writeNew: (dir, name, bytes) => invoke('fs:writeNew', dir, name, bytes),
   mediaMeta: (paths) => invoke('fs:mediaMeta', paths),
   probe: (p) => invoke('fs:probe', p),

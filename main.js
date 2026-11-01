@@ -5,7 +5,7 @@ const fsp = fs.promises;
 const os = require('os');
 const crypto = require('crypto');
 const { pathToFileURL } = require('url');
-const { spawn } = require('child_process');
+const { spawn, spawnSync } = require('child_process');
 
 // Stable WM_CLASS so the taskbar matches the window to nova-commander.desktop.
 app.commandLine.appendSwitch('class', 'nova-commander');
@@ -1286,6 +1286,88 @@ ipcMain.handle('arc:edit', async (_, { archive, op, innerDir = '', paths = [], e
   } finally {
     await fsp.rm(tmpArc, { force: true }).catch(() => {});
     await fsp.rm(stage, { recursive: true, force: true }).catch(() => {});
+  }
+});
+
+/* ---------------- cloud accounts (rclone, mounted as folders) ---------------- */
+// Each account is mounted at ~/Cloud/<name> with `rclone mount`, which runs in the foreground:
+// the child process is the mount, and it exits when the folder is unmounted.
+const cloudRoot = () => path.join(os.homedir(), 'Cloud');
+const cloudMounts = new Map(); // account name -> { child, mountpoint, exited, error }
+const isMounted = (mp) => {
+  const want = mp.replace(/ /g, '\\040');
+  try { return fs.readFileSync('/proc/mounts', 'utf8').split('\n').some((l) => l.split(' ')[1] === want); } catch { return false; }
+};
+const notifyCloud = () => { for (const w of windows) if (!w.isDestroyed()) w.webContents.send('cloud:changed'); };
+
+async function cloudStatus() {
+  const bin = tool('rclone');
+  if (!bin) return { installed: false, accounts: [] };
+  const r = await run(`rc-${Date.now()}`, bin, ['listremotes']);
+  const names = r.code === 0 ? r.out.split('\n').map((s) => s.trim().replace(/:$/, '')).filter(Boolean) : [];
+  return {
+    installed: true,
+    error: r.code === 0 ? null : toolError(r.out, r.code),
+    accounts: names.map((name) => {
+      const mp = path.join(cloudRoot(), name);
+      const m = cloudMounts.get(name);
+      return { name, mountpoint: mp, mounted: isMounted(mp), mounting: !!m && !m.exited };
+    }),
+  };
+}
+ipcMain.handle('cloud:status', () => cloudStatus());
+
+ipcMain.handle('cloud:mount', async (_, name, { cacheGB = 10, readOnly = false } = {}) => {
+  const bin = tool('rclone');
+  if (!bin) return { ok: false, error: 'rclone is not installed. Run: sudo apt install rclone fuse3' };
+  if (!/^[^:/\\]+$/.test(name)) return { ok: false, error: 'Bad account name' };
+  if (isMounted(path.join(cloudRoot(), name))) return { ok: true };
+  if (cloudMounts.has(name)) return { ok: false, error: 'Already mounting' };
+  const mp = path.join(cloudRoot(), name);
+  await fsp.mkdir(mp, { recursive: true });
+  const args = ['mount', `${name}:`, mp, '--vfs-cache-mode', 'writes', '--vfs-cache-max-size', `${Math.max(1, +cacheGB || 10)}G`,
+    '--dir-cache-time', '1m', '--poll-interval', '30s'];
+  if (readOnly) args.push('--read-only');
+  const child = spawn(bin, args, { stdio: ['ignore', 'ignore', 'pipe'] });
+  const entry = { child, mountpoint: mp, exited: false, error: null };
+  let stderr = '';
+  child.stderr.on('data', (d) => { stderr = (stderr + d).slice(-4000); });
+  child.on('close', (code) => {
+    entry.exited = true;
+    if (!isMounted(mp) && code !== 0) entry.error = toolError(stderr, code);
+    if (cloudMounts.get(name) === entry) cloudMounts.delete(name);
+    notifyCloud();
+  });
+  cloudMounts.set(name, entry);
+  for (let i = 0; i < 60; i++) { // up to 30 seconds
+    if (entry.exited) break;
+    if (isMounted(mp)) { notifyCloud(); return { ok: true }; }
+    await new Promise((r) => setTimeout(r, 500));
+  }
+  if (!entry.exited) child.kill('SIGTERM');
+  return { ok: false, error: entry.error || toolError(stderr, 1) || 'The mount did not finish starting. Check the account and your connection.' };
+});
+
+async function unmountAccount(name) {
+  const entry = cloudMounts.get(name);
+  const mp = entry ? entry.mountpoint : path.join(cloudRoot(), name);
+  let r = null;
+  for (const bin of ['fusermount3', 'fusermount']) {
+    r = await run(`um-${Date.now()}`, bin, ['-u', mp]);
+    if (r.code === 0) break;
+  }
+  if (r.code !== 0) return { ok: false, error: toolError(r.out, r.code) };
+  if (entry) cloudMounts.delete(name);
+  notifyCloud();
+  return { ok: true };
+}
+ipcMain.handle('cloud:unmount', (_, name) => unmountAccount(name));
+
+// On quit, unmount everything. Lazy unmount so a dropped connection can't hang the app.
+app.on('before-quit', () => {
+  for (const [name, entry] of cloudMounts) {
+    spawnSync('fusermount3', ['-u', '-z', entry.mountpoint], { stdio: 'ignore' });
+    cloudMounts.delete(name);
   }
 });
 

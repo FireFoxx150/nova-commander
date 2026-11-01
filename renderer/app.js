@@ -100,6 +100,8 @@ const DEFAULT_SETTINGS = {
   showDrives: true,
   iconTheme: '', // '' = built-in icons, else a freedesktop icon theme id
   thumbCache: true,
+  cloudCacheGB: 10, // local cache per cloud account, in GB
+  cloudReadOnly: false, // mount cloud accounts read-only
   keepInTray: false,
   globalHotkey: '', // Electron accelerator, e.g. "Control+Alt+E"
   columns: { ext: true, age: true, mtime: true, ctime: false, size: true, dims: false, taken: false, duration: false, tag: false },
@@ -1123,6 +1125,17 @@ function renderSidebar() {
   }
   net += `<div class="sb-item sb-action" data-connect><span class="si-icon">${line('plus')}</span><span class="si-name">Connect to server…</span></div>`;
   html += sbSection('network', 'Network & devices', net);
+  // Cloud accounts (rclone), each mounted as a folder under ~/Cloud.
+  const cs = state.cloud;
+  let cloud = '';
+  if (cs && cs.installed === false) cloud = `<div class="sb-empty">Install rclone to add cloud accounts:<br><code>sudo apt install rclone fuse3</code></div>`;
+  else if (cs && cs.error) cloud = `<div class="sb-empty">${esc(cs.error)}</div>`;
+  else for (const a of cs?.accounts || []) {
+    const st = a.mounted ? 'mounted' : a.mounting ? 'connecting…' : 'not mounted';
+    cloud += `<div class="sb-item" data-cloud="${esc(a.name)}" data-mounted="${a.mounted ? 1 : 0}" title="${esc(a.mountpoint)}"><span class="si-icon">${line('cloud')}</span><span class="si-name">${esc(a.name)}</span><span class="sb-st">${st}</span></div>`;
+  }
+  cloud += `<div class="sb-item sb-action" data-cloud-add><span class="si-icon">${line('plus')}</span><span class="si-name">Add cloud account…</span></div>`;
+  html += sbSection('cloud', 'Cloud', cloud, { head: `<button class="ib" data-cloud-refresh title="Refresh">${line('refresh')}</button>` });
   if (S().showRecent && state.recent.length) {
     let body = '';
     for (const p of state.recent.slice(0, 8)) {
@@ -3552,6 +3565,9 @@ function openSettings() {
     ${chk('markRecent', 'Highlight files changed in the last hour')}
     ${chk('showDrives', 'Show the Drives section in the sidebar')}
     ${chk('thumbCache', 'Cache thumbnails of large images', 'Makes thumbnail view faster the next time')}
+    <h4 class="st-h">Cloud</h4>
+    <label class="st-field"><span>Cache per account</span><input type="number" min="1" max="500" data-set="cloudCacheGB" value="${s.cloudCacheGB}"><span>GB</span></label>
+    ${chk('cloudReadOnly', 'Mount cloud accounts read-only', 'Nothing can be changed or deleted in the cloud from this computer')}
     <div class="st-field"><span>Thumbnail cache</span><span class="tc-size">…</span><button class="btn" data-tc-clear>Clear</button></div>
     <h4 class="st-h">System</h4>
     <div class="st-field"><span>Default file manager</span><span class="fm-state">…</span><button class="btn" data-fm hidden>Make Nova the default</button></div>
@@ -3720,6 +3736,10 @@ function bindChrome() {
     const um = e.target.closest('[data-unmount]');
     if (um) { unmountShare(um.dataset.unmount); return; }
     if (e.target.closest('[data-connect]')) { connectDialog(); return; }
+    if (e.target.closest('[data-cloud-add]')) { addCloudAccount(); return; }
+    if (e.target.closest('[data-cloud-refresh]')) { refreshCloud(); return; }
+    const cl = e.target.closest('[data-cloud]');
+    if (cl) { openCloud(cl.dataset.cloud, cl.dataset.mounted === '1'); return; }
     const tg = e.target.closest('[data-tagged]');
     if (tg) { showTagged(+tg.dataset.tagged); return; }
     const add = e.target.closest('[data-fav-add]');
@@ -3741,6 +3761,8 @@ function bindChrome() {
     if (it && e.button === 1) addTab(activePane(), it.dataset.nav);
   });
   sb.addEventListener('contextmenu', (e) => {
+    const cl = e.target.closest('[data-cloud]');
+    if (cl) { e.preventDefault(); cloudMenu(cl.dataset.cloud, cl.dataset.mounted === '1', e.clientX, e.clientY); return; }
     const head = e.target.closest('[data-group-head]');
     if (head) {
       e.preventDefault();
@@ -3817,7 +3839,8 @@ function bindChrome() {
     const path = img.closest('[data-path]')?.dataset.path || '';
     img.outerHTML = iconFor({ name: P.basename(path), isDir: false }, { big: true });
   }, true);
-  window.addEventListener('focus', () => loadPlaces());
+  window.addEventListener('focus', () => { loadPlaces(); refreshCloud(); });
+  api.cloud.onChanged(() => refreshCloud());
   // Keep the age badges current.
   setInterval(() => { for (const p of visiblePanes()) if (!p.renaming && !drag) renderBody(p); }, 60000);
 }
@@ -3870,6 +3893,7 @@ async function init() {
   applySplit();
   bindChrome();
   bindTerminal();
+  refreshCloud();
 
   await Promise.all(state.panes.map(async (pane) => {
     if (pane.index === 1 && !state.dual) return;

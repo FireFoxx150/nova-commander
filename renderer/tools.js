@@ -685,6 +685,41 @@ function bindTerminal() {
 }
 
 /* =========================================================
+ * Cloud accounts (rclone): mounted as folders under ~/Cloud
+ * ======================================================= */
+async function refreshCloud() {
+  state.cloud = await api.cloud.status();
+  renderSidebar();
+}
+// Open a cloud account: mount it first if needed, then show its folder.
+async function openCloud(name, mounted) {
+  const dir = `${HOME}/Cloud/${name}`;
+  if (!mounted) {
+    toast(`Connecting to ${name}…`);
+    const r = await api.cloud.mount(name, { cacheGB: S().cloudCacheGB, readOnly: S().cloudReadOnly });
+    if (!r.ok) { toast(`Couldn’t connect to ${name} — ${r.error}`, 'error', { timeout: 9000 }); await refreshCloud(); return; }
+  }
+  const pane = activePane();
+  navigate(pane, tabOf(pane), dir);
+  await refreshCloud();
+}
+function addCloudAccount() {
+  showTerminal(HOME);
+  term?.id && api.termInput(term.id, 'rclone config\r');
+  toast('Finish the sign-in in the terminal, then press Refresh in the Cloud section');
+}
+async function cloudMenu(name, mounted, x, y) {
+  showMenu(x, y, [
+    { label: mounted ? 'Open' : 'Connect and open', icon: 'open', act: () => openCloud(name, mounted) },
+    mounted
+      ? { label: 'Disconnect', icon: 'x', act: async () => { const r = await api.cloud.unmount(name); if (!r.ok) toast(`Couldn’t disconnect ${name} — ${r.error}`, 'error', { timeout: 8000 }); await refreshCloud(); } }
+      : { label: 'Connect', icon: 'link', act: () => openCloud(name, false) },
+    '-',
+    { label: 'Remove account…', icon: 'trash', danger: true, act: () => { showTerminal(HOME); term?.id && api.termInput(term.id, `rclone config delete ${name}\r`); toast('Confirm the removal in the terminal'); } },
+  ]);
+}
+
+/* =========================================================
  * Folder notes and backgrounds
  * ======================================================= */
 async function editNote(dir) {
