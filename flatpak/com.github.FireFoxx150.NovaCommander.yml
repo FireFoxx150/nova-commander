@@ -11,6 +11,21 @@ finish-args:
   - --filesystem=host
   - --talk-name=org.freedesktop.Notifications
 modules:
+  # zypak lets Electron use Chromium's sandbox inside Flatpak, so --no-sandbox isn't needed.
+  - name: zypak
+    buildsystem: simple
+    sources:
+      - type: git
+        url: https://github.com/refi64/zypak.git
+        tag: v2025.09
+        commit: 693a71c5ffa80ec9c9ce2ae03b1ccc493c698e53
+    build-commands:
+      - ./configure --prefix=/app/lib/zypak
+      - make -j4
+      - install -d /app/lib/zypak/build
+      - install -m755 build/zypak-sandbox build/zypak-helper /app/lib/zypak/build/
+      - install -m755 build/*.so /app/lib/zypak/build/
+      - install -m755 zypak-wrapper.sh /app/lib/zypak/
   - name: nova-commander
     buildsystem: simple
     sources:
