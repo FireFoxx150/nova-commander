@@ -1,5 +1,5 @@
 /* ===== Themes ===== */
-/* Black: Nova Commander's dark theme — near-black, yellow folders, orange accents. */
+/* Black: near-black theme with yellow folders and orange accents. */
 :root, :root[data-theme="black"] {
   --bg: #0a0a0a;
   --panel: #0a0a0a;

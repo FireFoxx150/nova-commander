@@ -1,5 +1,5 @@
 'use strict';
-/* Nova Commander — renderer (Nova Commander-style layout) */
+/* Nova Commander — renderer */
 
 /* global api — exposed by preload.js */
 const { iconFor, line, typeName, extOf, folderSvg } = window.Icons;
@@ -50,7 +50,7 @@ const isoDay = (ms) => { const d = new Date(ms); return `${d.getFullYear()}-${pa
 function fmtFull(ms) { const d = new Date(ms); return `${fmtDay(ms)} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`; }
 const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
 
-// Nova Commander-style colour-coded file age:
+// Colour-coded file age:
 // today = red→orange, 1–7 days = yellow→green, 7–30 days = green→cyan, 1–12 months = cyan→blue, 1 year+ = grey.
 function ageInfo(ms) {
   const sec = Math.max(0, (Date.now() - ms) / 1000);
@@ -204,7 +204,7 @@ function makeCol(path, res) {
   return { path, entries, map: new Map(entries.map((e) => [e.path, e])), sel: new Set(), cursor: null, anchor: null, error: res && !res.ok ? res.error : null };
 }
 
-/* Folder sizes are computed in the background (like Nova Commander) and cached. */
+/* Folder sizes are computed in the background and cached. */
 const dirSizes = new Map(); // path -> { size, partial, t }
 const sizeQueue = [];
 let sizeBusy = 0;
@@ -3870,7 +3870,7 @@ async function init() {
     state.recent = Array.isArray(saved.recent) ? saved.recent : [];
     state.dropList = Array.isArray(saved.dropList) ? saved.dropList : [];
     if (saved.v !== STYLE_VERSION) {
-      // First run with the Nova Commander dark style: switch to its defaults.
+      // First run with the current dark style: switch to its defaults.
       state.info = false;
       saved.theme = 0;
       for (const sp of saved.panes || []) for (const t of sp.tabs || []) t.view = 'details';

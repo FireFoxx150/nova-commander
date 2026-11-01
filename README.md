@@ -1,8 +1,8 @@
 # Nova Commander
 
-A modern dark dual-pane file manager for Linux, with a look inspired by Nova Commander.
+A modern dark dual-pane file manager for Linux.
 
-Nova Commander is an independent project and is not affiliated with or endorsed by Nova Commander.
+Nova Commander is an independent project.
 
 Drag and drop **moves** files by default. Hold **Ctrl** while dragging to copy.
 
