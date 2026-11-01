@@ -448,6 +448,39 @@ async function showProperties(paths) {
 }
 
 /* =========================================================
+ * Checksums and duplicate files
+ * ======================================================= */
+async function showChecksums(p) {
+  const r = await api.checksums(p);
+  if (!r.ok) { toast(r.error, 'error'); return; }
+  await dialog({
+    title: `Checksums: ${P.basename(p)}`,
+    cls: 'props-modal',
+    html: `<dl class="props"><dt>MD5</dt><dd class="np-mono">${r.md5}</dd><dt>SHA-256</dt><dd class="np-mono">${r.sha256}</dd></dl>
+      <div class="m-actions"><button class="btn" data-copy-sha>Copy SHA-256</button><span class="br-sp"></span><button class="btn primary" data-cancel>Close</button></div>`,
+    setup: (root) => { $('[data-copy-sha]', root).onclick = () => api.copyText(r.sha256); },
+  });
+}
+
+async function findDuplicates(dir) {
+  toast('Searching for duplicates…');
+  const r = await api.duplicates(dir);
+  const groups = r.groups;
+  if (!groups.length) { toast(`No duplicates found in ${P.basename(dir) || dir} (${plural(r.scanned, 'file')} checked)`); return; }
+  const list = groups.map((g, gi) => `<div class="dup-group"><div class="dup-head">${g.paths.length} identical files · ${fmtSize(g.size)} each</div>${g.paths.map((p, i) =>
+    `<label class="dup-row"><input type="checkbox" data-dup="${esc(p)}" ${i === 0 ? '' : 'checked'}><span title="${esc(p)}">${esc(P.display(p))}</span></label>`).join('')}</div>`).join('');
+  const picked = await dialog({
+    title: `${plural(groups.length, 'duplicate group')} in ${dirLabel(dir)}`,
+    cls: 'dup-modal',
+    html: `<p>The first copy in each group is kept. Ticked copies are sent to the Trash.${r.partial ? ' The search stopped early, so some duplicates may be missing.' : ''}</p>
+      <div class="dup-list">${list}</div>
+      <div class="m-actions"><button class="btn" data-cancel>Cancel</button><span class="br-sp"></span><button class="btn danger" data-submit>Move ticked to Trash</button></div>`,
+    submit: (root) => [...root.querySelectorAll('[data-dup]:checked')].map((c) => c.dataset.dup),
+  });
+  if (picked?.length) await trashPaths(picked);
+}
+
+/* =========================================================
  * Folder notes and backgrounds
  * ======================================================= */
 async function editNote(dir) {

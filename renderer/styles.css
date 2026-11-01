@@ -674,3 +674,13 @@ img.pk { width: 100%; height: 100%; object-fit: contain; display: block; }
 .todo-list label span.done { color: var(--muted); text-decoration: line-through; }
 .todo-list .empty { color: var(--muted); border: 0; }
 .todo-add { width: 100%; margin-bottom: 12px; }
+
+/* Size bars in list view: a light fill behind each file's size, scaled to the largest item. */
+.list-body .c-size { background: linear-gradient(to right, color-mix(in srgb, var(--accent) 22%, transparent) var(--bar, 0%), transparent var(--bar, 0%)); }
+/* Duplicate finder */
+.dup-modal { width: 620px; }
+.dup-list { max-height: 360px; overflow-y: auto; margin-bottom: 12px; }
+.dup-group { border: 1px solid var(--line); margin-bottom: 8px; padding: 6px 8px; }
+.dup-head { color: var(--text-2); font-size: 12px; margin-bottom: 4px; }
+.dup-row { display: flex; align-items: center; gap: 8px; padding: 2px 0; font-size: 12.5px; cursor: pointer; }
+.dup-row span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; user-select: text; }

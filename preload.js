@@ -7,6 +7,8 @@ contextBridge.exposeInMainWorld('api', {
   list: (dir) => invoke('fs:list', dir),
   stat: (p) => invoke('fs:stat', p),
   dirSize: (p) => invoke('fs:dirSize', p),
+  checksums: (p) => invoke('fs:checksums', p),
+  duplicates: (dir) => invoke('fs:duplicates', dir),
   props: (p) => invoke('fs:props', p),
   conflicts: (sources, destDir) => invoke('fs:conflicts', sources, destDir),
   transfer: (opts) => invoke('fs:transfer', opts),

@@ -873,12 +873,13 @@ function listColumns(pane) {
   return cols;
 }
 const colsKey = (pane) => listColumns(pane).map((c) => c.id).join();
+let listMaxSize = 1; // largest size in the current list, for the size bars
 function listRowHtml(e, col, focused, cols) {
   const ext = e.isDir ? '' : extOf(e.name);
   const base = ext ? esc(e.name.slice(0, -(ext.length + 1))) : esc(e.name);
   const name = ext && S().showExtensions ? `${base}<span class="r-ext">.${esc(e.name.slice(-ext.length))}</span>` : base;
   return `<div ${rowAttrs(e, col, focused)}>${rowIcon(e)}<span class="r-name">${name}</span>`
-    + cols.map((c) => `<span class="${c.cls}${c.id === 'size' && e.isDir && !dirSizes.has(e.path) ? ' pending' : ''}">${c.cell(e)}</span>`).join('') + '</div>';
+    + cols.map((c) => `<span class="${c.cls}${c.id === 'size' && e.isDir && !dirSizes.has(e.path) ? ' pending' : ''}"${c.id === 'size' ? ` style="--bar:${Math.min(100, Math.max(0, (sizeOf(e) / listMaxSize) * 100)).toFixed(1)}%"` : ''}>${c.cell(e)}</span>`).join('') + '</div>';
 }
 
 // Thumbnail view tiles: images show the picture itself, everything else a big icon.
@@ -952,6 +953,7 @@ function renderBody(pane) {
   else if (!vis.length) body = `<div class="empty">${tab.filter || tab.typeFilter ? 'No matches' : 'Empty folder'}</div>`;
   const cols = grid ? [] : listColumns(pane);
   pane.colsKey = cols.map((c) => c.id).join();
+  listMaxSize = Math.max(1, vis.reduce((m, e) => Math.max(m, sizeOf(e)), 0));
   if (!col.error && vis.length) body = vis.map((e) => (grid ? gridTileHtml(e, col, focused) : listRowHtml(e, col, focused, cols))).join('');
   queueMicrotask(() => { renderHeadInfo(pane); queueDirSizes(pane); queueMeta(pane, vis); if (grid) { cacheThumbs(pane); loadVideoThumbs(pane); } });
   const note = state.notes[col.path];
@@ -2076,6 +2078,7 @@ function itemMenu(x, y, pane, tab, col) {
     items.push({ label: 'Change folder icon…', icon: 'image', act: () => chooseIcon('folder', single.path) });
     if (state.folderIcons[single.path]) items.push({ label: 'Reset folder icon', icon: 'x', act: () => setIcon('folder', single.path, null) });
   }
+  if (single && !single.isDir) items.push({ label: 'Checksums…', icon: 'check', act: () => showChecksums(single.path) });
   if (single && !single.isDir && extOf(single.name)) {
     const ext = extOf(single.name);
     items.push({ label: `Use image as icon for .${ext} files…`, icon: 'image', act: () => chooseIcon('ext', ext) });
@@ -2141,6 +2144,7 @@ async function backgroundMenu(x, y, pane, tab, dir) {
     '-',
     { label: state.notes[dir] ? 'Edit folder note…' : 'Add folder note…', icon: 'note', key: kb('note'), act: () => editNote(dir) },
     { label: 'To-do list…', icon: 'note', act: () => editTodos(dir) },
+    { label: 'Find duplicates…', icon: 'search', act: () => findDuplicates(dir) },
     ...(state.folderBg[dir] ? [{ label: 'Remove folder background', icon: 'image', act: () => setFolderBg(dir, null) }] : []),
     { label: 'File Automator…', icon: 'wand', key: kb('automator'), act: () => fileAutomator(dir, tab.columns.find((c) => c.path === dir)?.entries || []) },
     ...scriptItems([], dir),
@@ -2228,6 +2232,10 @@ function moveCursor(pane, tab, to, shift) {
  * Escape, Home/End, PageUp/Down, type-ahead — and Alt+0…7 tags stay fixed. */
 const sel = () => selectedPaths();
 const ACTIONS = [
+  ...[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => ({ id: `fav${n}`, label: `Go to favourite ${n}`, keys: [`Ctrl+Alt+${n}`], run: ({ pane }) => {
+    const favs = state.favGroups.flatMap((g) => g.items);
+    if (favs[n - 1]) navigate(pane, tabOf(pane), favs[n - 1].path);
+  } })),
   { id: 'newTab', label: 'New tab', keys: ['Ctrl+T'], run: ({ pane }) => addTab(pane) },
   { id: 'closeTab', label: 'Close tab', keys: ['Ctrl+W'], run: ({ pane }) => closeTab(pane, pane.activeTab) },
   { id: 'reopenTab', label: 'Reopen closed tab', keys: ['Ctrl+Shift+T'], run: ({ pane }) => reopenTab(pane) },

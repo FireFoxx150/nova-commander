@@ -265,6 +265,58 @@ ipcMain.handle('fs:stat', async (_, p) => {
 });
 
 // Recursive folder size, bounded so huge trees can't stall the app.
+// MD5 and SHA-256 of one file, streamed so large files don't fill memory.
+ipcMain.handle('fs:checksums', (_, p) => new Promise((resolve) => {
+  const md5 = crypto.createHash('md5'), sha = crypto.createHash('sha256');
+  fs.createReadStream(p)
+    .on('data', (c) => { md5.update(c); sha.update(c); })
+    .on('end', () => resolve({ ok: true, md5: md5.digest('hex'), sha256: sha.digest('hex') }))
+    .on('error', (e) => resolve(fail(e)));
+}));
+
+// Duplicate files under `root`: same size first, then SHA-256 only for those groups.
+ipcMain.handle('fs:duplicates', async (_, root) => {
+  const started = Date.now();
+  const bySize = new Map();
+  let count = 0, partial = false;
+  const stack = [root];
+  while (stack.length) {
+    if (count > 200000 || Date.now() - started > 60000) { partial = true; break; }
+    const dir = stack.pop();
+    let items;
+    try { items = await fsp.readdir(dir, { withFileTypes: true }); } catch { continue; }
+    for (const d of items) {
+      const p = path.join(dir, d.name);
+      if (d.isDirectory()) { stack.push(p); continue; }
+      if (!d.isFile()) continue;
+      count++;
+      try {
+        const st = await fsp.stat(p);
+        if (st.size === 0) continue;
+        if (!bySize.has(st.size)) bySize.set(st.size, []);
+        bySize.get(st.size).push(p);
+      } catch { /* unreadable */ }
+    }
+  }
+  const groups = [];
+  for (const [size, paths] of bySize) {
+    if (paths.length < 2) continue;
+    const byHash = new Map();
+    for (const p of paths) {
+      const h = await new Promise((resolve) => {
+        const sha = crypto.createHash('sha256');
+        fs.createReadStream(p).on('data', (c) => sha.update(c)).on('end', () => resolve(sha.digest('hex'))).on('error', () => resolve(null));
+      });
+      if (!h) continue;
+      if (!byHash.has(h)) byHash.set(h, []);
+      byHash.get(h).push(p);
+    }
+    for (const same of byHash.values()) if (same.length > 1) groups.push({ size, paths: same });
+  }
+  groups.sort((a, b) => b.size * (b.paths.length - 1) - a.size * (a.paths.length - 1));
+  return { groups, partial, scanned: count };
+});
+
 ipcMain.handle('fs:dirSize', async (_, root) => {
   const started = Date.now();
   let size = 0, count = 0, partial = false;
