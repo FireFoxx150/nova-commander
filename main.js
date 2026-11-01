@@ -416,7 +416,7 @@ ipcMain.handle('fs:gitStatus', async (_, dir) => {
   if (top === null) return { repo: false, entries: [] };
   const root = top.trim();
   const out = (await gitRun(dir, ['status', '--porcelain=v1', '-z', '--untracked-files=normal'])) || '';
-  const parts = out.split(' ');
+  const parts = out.split('\0');
   const entries = [];
   for (let i = 0; i < parts.length; i++) {
     const s = parts[i];
@@ -1249,6 +1249,46 @@ ipcMain.handle('arc:list', async (_, archive, password) => {
   return ok({ entries, truncated: entries.length >= LIMIT, encrypted });
 });
 
+// Add files to, or delete entries from, a zip or 7z archive. The change is made on a copy in the
+// same folder, which replaces the original only if 7-Zip succeeds, so a failure can't damage it.
+ipcMain.handle('arc:edit', async (_, { archive, op, innerDir = '', paths = [], entries = [] }) => {
+  const sz = sevenZip();
+  if (!sz) return { ok: false, error: '7-Zip is not installed (package 7zip or p7zip-full)' };
+  const base = path.basename(archive);
+  if (TAR_RE.test(base)) return { ok: false, error: 'Tar archives can’t be edited. Use zip or 7z.' };
+  const tmpArc = path.join(path.dirname(archive), `.${base}.nc-${Date.now()}${path.extname(base)}`);
+  const stage = await fsp.mkdtemp(path.join(os.tmpdir(), 'nc-arc-'));
+  try {
+    await fsp.copyFile(archive, tmpArc);
+    const probe = await run(`probe-${Date.now()}`, sz, ['l', '-slt', '-ba', '--', tmpArc]);
+    if (probe.code !== 0) return { ok: false, error: toolError(probe.out, probe.code) };
+    if (/^Encrypted = \+$/m.test(probe.out)) return { ok: false, error: 'Encrypted archives can’t be edited yet.' };
+    let args, cwd;
+    if (op === 'add') {
+      const rels = [];
+      for (const src of paths) {
+        const rel = path.posix.join(innerDir, path.basename(src));
+        await fsp.mkdir(path.dirname(path.join(stage, rel)), { recursive: true });
+        await fsp.cp(src, path.join(stage, rel), { recursive: true, errorOnExist: false, force: true });
+        rels.push(rel);
+      }
+      args = ['a', '-y', '--', tmpArc, ...rels];
+      cwd = stage;
+    } else if (op === 'remove') {
+      args = ['d', '-y', '--', tmpArc, ...entries];
+    } else return { ok: false, error: 'Unknown change' };
+    const r = await run(`edit-${Date.now()}`, sz, args, { cwd, input: '' });
+    if (r.code !== 0) return { ok: false, error: toolError(r.out, r.code) };
+    await fsp.rename(tmpArc, archive);
+    return { ok: true };
+  } catch (e) {
+    return fail(e);
+  } finally {
+    await fsp.rm(tmpArc, { force: true }).catch(() => {});
+    await fsp.rm(stage, { recursive: true, force: true }).catch(() => {});
+  }
+});
+
 /* ---------------- recursive search ---------------- */
 
 const searchJobs = new Map();
@@ -1904,6 +1944,10 @@ ipcMain.handle('term:start', (e, cwd, cols, rows) => {
 ipcMain.on('term:input', (_, id, data) => { const t = terms.get(id); if (t && t.child.stdin.writable) t.child.stdin.write(Buffer.from(data, 'utf8')); });
 ipcMain.on('term:kill', (_, id) => { const t = terms.get(id); if (t) { terms.delete(id); t.child.kill(); } });
 // Pick an image file for a custom folder or file-type icon.
+ipcMain.handle('dialog:pickFiles', async (e) => {
+  const r = await dialog.showOpenDialog(winOf(e) || undefined, { properties: ['openFile', 'multiSelections'] });
+  return r.canceled ? [] : r.filePaths;
+});
 ipcMain.handle('dialog:pickImage', async (e) => {
   const r = await dialog.showOpenDialog(winOf(e) || undefined, { properties: ['openFile'], filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'ico'] }] });
   return r.canceled ? null : r.filePaths[0];

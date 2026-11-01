@@ -243,12 +243,12 @@ async function quickLookHtml(e) {
 /* =========================================================
  * Archive browser: folders inside the archive, extract a selection
  * ======================================================= */
-async function browseArchive(p, destDir, password = null) {
+async function browseArchive(p, destDir, password = null, startCwd = '') {
   const r = await api.archive.list(p, password);
   if (!r.ok) {
     if (r.needPassword) {
       const pw = await promptDialog({ title: `Password for “${P.basename(p)}”`, body: r.error, password: true, confirm: 'Open' });
-      if (pw != null) browseArchive(p, destDir, pw);
+      if (pw != null) browseArchive(p, destDir, pw, startCwd);
       return;
     }
     toast(`Couldn't read “${P.basename(p)}” — ${r.error}`, 'error', { timeout: 8000 });
@@ -271,7 +271,7 @@ async function browseArchive(p, destDir, password = null) {
     total += e.size;
     ensure(e.path.includes('/') ? e.path.slice(0, e.path.lastIndexOf('/')) : '').files.push(e);
   }
-  let cwd = '';
+  let cwd = tree.has(startCwd) ? startCwd : '';
   const sel = new Set();
   const base = (x) => x.slice(x.lastIndexOf('/') + 1);
   const when = (ms) => (ms ? `${isoDay(ms)} ${pad(new Date(ms).getHours())}:${pad(new Date(ms).getMinutes())}` : '');
@@ -299,7 +299,7 @@ async function browseArchive(p, destDir, password = null) {
       <div class="arc-sum">${plural(files, 'file')} · ${fmtSize(total)} uncompressed${r.encrypted ? ' · <span class="arc-lock">encrypted</span>' : ''}${r.truncated ? ' · listing truncated' : ''}</div>
       <div class="arc-bar"><div class="arc-crumbs crumbs"></div><div class="filter arc-filter">${line('search')}<input placeholder="Filter whole archive" spellcheck="false"></div></div>
       <div class="arc-list"></div>
-      <div class="m-actions"><span class="arc-selinfo"></span><button class="btn" data-cancel>Close</button><button class="btn" data-pick="selected" disabled>Extract selected</button><button class="btn" data-value="folder">Extract to “${esc(archiveBase(P.basename(p)))}/”</button><button class="btn primary" data-value="here">Extract here</button></div>`,
+      <div class="m-actions"><span class="arc-selinfo"></span><button class="btn" data-cancel>Close</button><button class="btn" data-pick="selected" disabled>Extract selected</button><button class="btn" data-edit="add" title="Add files from your computer into the folder you are viewing">Add files here…</button><button class="btn danger" data-edit="remove" disabled>Delete selected</button><button class="btn" data-value="folder">Extract to “${esc(archiveBase(P.basename(p)))}/”</button><button class="btn primary" data-value="here">Extract here</button></div>`,
     setup: (root, close) => {
       const input = $('.arc-filter input', root);
       const redraw = () => {
@@ -307,10 +307,13 @@ async function browseArchive(p, destDir, password = null) {
         $('.arc-crumbs', root).innerHTML = crumbs();
         $('.arc-selinfo', root).textContent = sel.size ? `${plural(sel.size, 'item')} selected` : '';
         $('[data-pick]', root).disabled = !sel.size;
+        $('[data-edit="remove"]', root).disabled = !sel.size;
       };
       input.addEventListener('input', redraw);
       root.addEventListener('click', (e) => {
         if (e.target.closest('[data-pick]')) { close({ mode: 'here', entries: [...sel] }); return; }
+        const ed = e.target.closest('[data-edit]');
+        if (ed) { close({ edit: ed.dataset.edit, entries: [...sel], cwd }); return; }
         const cd = e.target.closest('[data-cd]');
         if (cd) { cwd = cd.dataset.cd; input.value = ''; redraw(); return; }
         if (e.target.closest('[data-up]')) { cwd = cwd.includes('/') ? cwd.slice(0, cwd.lastIndexOf('/')) : ''; redraw(); return; }
@@ -328,8 +331,33 @@ async function browseArchive(p, destDir, password = null) {
     },
   });
   if (!choice) return;
+  if (choice.edit) { await editArchive(p, destDir, choice); return; }
   if (typeof choice === 'object') extractArchives([p], destDir, choice.mode, choice.entries);
   else extractArchives([p], destDir, choice);
+}
+
+// Adding files or deleting entries rewrites the archive; the browser reopens in the same folder.
+async function editArchive(p, destDir, { edit, entries, cwd }) {
+  if (edit === 'add') {
+    const files = await api.pickFiles();
+    if (files.length) {
+      const r = await api.archive.edit({ archive: p, op: 'add', innerDir: cwd, paths: files });
+      if (r.ok) toast(`Added ${plural(files.length, 'item')} to ${P.basename(p)}`, 'success');
+      else toast(r.error, 'error', { timeout: 8000 });
+    }
+  } else if (edit === 'remove') {
+    const ok = await confirmDialog({
+      title: `Delete ${plural(entries.length, 'item')} from ${P.basename(p)}?`,
+      body: 'The archive is rewritten, and deleted items can’t be recovered from it.',
+      items: entries, confirm: 'Delete', danger: true,
+    });
+    if (ok) {
+      const r = await api.archive.edit({ archive: p, op: 'remove', entries });
+      if (r.ok) toast(`Deleted ${plural(entries.length, 'item')} from ${P.basename(p)}`, 'success');
+      else toast(r.error, 'error', { timeout: 8000 });
+    }
+  }
+  await browseArchive(p, destDir, null, cwd);
 }
 
 /* =========================================================
