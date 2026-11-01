@@ -481,6 +481,120 @@ async function findDuplicates(dir) {
 }
 
 /* =========================================================
+ * Sync, permissions and rename across subfolders
+ * ======================================================= */
+const SYNC_LABEL = { mkdir: 'New folder', copy: 'Copy', update: 'Replace', delete: 'Trash' };
+// Sync `src` into `dst`: preview first, then apply on confirm.
+async function syncTo(src, dst) {
+  if (!dst || dst === src || P.isInside(dst, src) || P.isInside(src, dst)) { toast('Pick two folders that are not inside each other'); return; }
+  let deleteExtra = false;
+  const preview = (root, plan) => {
+    const counts = {};
+    for (const a of plan.actions) counts[a.type] = (counts[a.type] || 0) + 1;
+    $('.sync-summary', root).textContent = plan.actions.length
+      ? Object.entries(counts).map(([k, n]) => `${n} ${SYNC_LABEL[k].toLowerCase()}`).join(' · ')
+      : 'Already in sync';
+    $('.sync-list', root).innerHTML = plan.actions.slice(0, 300).map((a) => `<li><span class="sync-tag sync-${a.type}">${SYNC_LABEL[a.type]}</span> ${esc(a.rel)}</li>`).join('')
+      + (plan.actions.length > 300 ? `<li>…and ${plan.actions.length - 300} more</li>` : '');
+    $('[data-submit]', root).disabled = !plan.actions.length;
+  };
+  let plan = await api.syncPlan(src, dst, false);
+  const picked = await dialog({
+    title: `Sync ${dirLabel(src)} → ${dirLabel(dst)}`,
+    cls: 'sync-modal',
+    html: `<p>Make <b>${esc(dirLabel(dst))}</b> match <b>${esc(dirLabel(src))}</b>. Nothing changes until you confirm. Anything replaced or removed goes to the Trash.</p>
+      <label class="sync-opt"><input type="checkbox" class="sync-del"> Also remove files in the destination that aren't in the source</label>
+      <p class="sync-summary"></p><ul class="sync-list"></ul>
+      <div class="m-actions"><button class="btn" data-cancel>Cancel</button><span class="br-sp"></span><button class="btn primary" data-submit>Sync</button></div>`,
+    setup: (root) => {
+      preview(root, plan);
+      $('.sync-del', root).onchange = async (e) => {
+        deleteExtra = e.target.checked;
+        plan = await api.syncPlan(src, dst, deleteExtra);
+        preview(root, plan);
+      };
+    },
+    submit: () => plan.actions,
+  });
+  if (!picked?.length) return;
+  const r = await api.syncApply(picked);
+  toast(`Synced: ${plural(r.done, 'change')}${r.errors.length ? ` · ${plural(r.errors.length, 'error')}` : ''}`, r.errors.length ? 'error' : 'success');
+  if (r.errors.length) toast(r.errors.slice(0, 3).join('\n'), 'error', { timeout: 8000 });
+  await refreshDirs([src, dst]);
+}
+
+// Permissions (octal) for one or more items; folders can apply it to everything inside.
+async function permissionsDialog(paths) {
+  const first = await api.preview(paths[0]);
+  const cur = first.ok ? first.mode.padStart(3, '0') : '644';
+  const dirs = (await Promise.all(paths.map((p) => api.preview(p)))).some((i) => i.kind === 'dir');
+  const r = await dialog({
+    title: paths.length === 1 ? `Permissions: ${P.basename(paths[0])}` : `Permissions: ${plural(paths.length, 'item')}`,
+    html: `<p>Octal mode, for example <b>755</b> (owner read/write/run, everyone else read/run) or <b>644</b>.</p>
+      <label class="perm-field">Mode <input class="m-input perm-mode" value="${cur}" maxlength="4" spellcheck="false"></label>
+      <div class="perm-err" aria-live="polite"></div>
+      ${dirs ? '<label class="perm-opt"><input type="checkbox" class="perm-rec"> Apply to everything inside the folders too</label>' : ''}
+      <div class="m-actions"><button class="btn" data-cancel>Cancel</button><span class="br-sp"></span><button class="btn primary" data-submit>Apply</button></div>`,
+    setup: (root) => { const i = $('.perm-mode', root); i.focus(); i.select(); },
+    submit: (root) => {
+      const mode = $('.perm-mode', root).value.trim();
+      if (!/^[0-7]{3,4}$/.test(mode)) { $('.perm-err', root).textContent = 'Use three or four octal digits, such as 755.'; return undefined; }
+      return { mode, recursive: !!$('.perm-rec', root)?.checked };
+    },
+  });
+  if (!r) return;
+  const res = await api.chmod(paths, r.mode, r.recursive);
+  toast(`Set ${r.mode} on ${plural(res.count, 'item')}${res.errors.length ? ` · ${plural(res.errors.length, 'error')}` : ''}`, res.errors.length ? 'error' : 'success');
+  if (res.errors.length) toast(res.errors.slice(0, 3).join('\n'), 'error', { timeout: 8000 });
+  await refreshDirs(paths.map(P.dirname));
+}
+
+// Find and replace in file names across a folder and everything inside it. Preview, then rename.
+async function renameInTree(dir) {
+  const files = (await api.walk(dir)).filter((f) => !/(^|\/)\.git(\/|$)/.test(f)); // never touch git's own files
+  let pairs = [];
+  const build = (root) => {
+    const find = $('.rt-find', root).value, replace = $('.rt-replace', root).value;
+    pairs = [];
+    const rows = [];
+    if (!find) { $('.rt-list', root).innerHTML = '<li class="empty">Type what to find</li>'; $('[data-submit]', root).disabled = true; return; }
+    const taken = new Set();
+    for (const f of files) {
+      const name = P.basename(f);
+      if (!name.includes(find)) continue;
+      const to = P.dirname(f) + '/' + name.split(find).join(replace);
+      if (to === f) continue;
+      if (taken.has(to) || (to !== f && exists_(to))) { rows.push(`<li class="conflict">${esc(P.display(f))} — a file with that name already exists</li>`); continue; }
+      taken.add(to);
+      pairs.push({ from: f, to });
+      rows.push(`<li>${esc(P.display(f))} <span class="rt-arrow">→</span> ${esc(name.split(find).join(replace))}</li>`);
+    }
+    $('.rt-list', root).innerHTML = rows.slice(0, 300).join('') || '<li class="empty">Nothing matches</li>';
+    $('.rt-count', root).textContent = `${plural(pairs.length, 'file')} will be renamed`;
+    $('[data-submit]', root).disabled = !pairs.length;
+  };
+  const exists_ = (p) => knownNames.has(p);
+  const knownNames = new Set(files);
+  const done = await dialog({
+    title: `Rename in ${dirLabel(dir)} and subfolders`,
+    cls: 'rt-modal',
+    html: `<div class="rt-fields"><label>Find <input class="m-input rt-find" spellcheck="false"></label><label>Replace with <input class="m-input rt-replace" spellcheck="false"></label></div>
+      <p class="rt-count"></p><ul class="rt-list"></ul>
+      <div class="m-actions"><button class="btn" data-cancel>Cancel</button><span class="br-sp"></span><button class="btn primary" data-submit>Rename</button></div>`,
+    setup: (root) => {
+      root.querySelectorAll('.rt-find, .rt-replace').forEach((i) => i.addEventListener('input', () => build(root)));
+      $('.rt-find', root).focus();
+      build(root);
+    },
+    submit: () => pairs,
+  });
+  if (!done?.length) return;
+  const r = await api.batchRename(done);
+  toast(`Renamed ${plural(r.done?.length || 0, 'file')}${r.errors?.length ? ` · ${plural(r.errors.length, 'error')}` : ''}`, r.errors?.length ? 'error' : 'success');
+  await refreshDirs([...new Set(done.map((p) => P.dirname(p.from)))]);
+}
+
+/* =========================================================
  * Folder notes and backgrounds
  * ======================================================= */
 async function editNote(dir) {

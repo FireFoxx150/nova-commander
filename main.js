@@ -317,6 +317,117 @@ ipcMain.handle('fs:duplicates', async (_, root) => {
   return { groups, partial, scanned: count };
 });
 
+// Every file and folder under `root` (relative paths), skipping symlinks. Capped so huge trees can't stall.
+async function walkTree(root, cap = 200000) {
+  const out = new Map(); // rel -> { abs, isDir, size, mtime }
+  const stack = [''];
+  while (stack.length && out.size < cap) {
+    const rel = stack.pop();
+    let items;
+    try { items = await fsp.readdir(path.join(root, rel), { withFileTypes: true }); } catch { continue; }
+    for (const d of items) {
+      if (d.isSymbolicLink()) continue;
+      const r = rel ? `${rel}/${d.name}` : d.name;
+      const abs = path.join(root, r);
+      if (d.isDirectory()) { out.set(r, { abs, isDir: true, size: 0, mtime: 0 }); stack.push(r); continue; }
+      if (!d.isFile()) continue;
+      try { const st = await fsp.stat(abs); out.set(r, { abs, isDir: false, size: st.size, mtime: st.mtimeMs }); } catch { /* unreadable */ }
+    }
+  }
+  return out;
+}
+
+ipcMain.handle('fs:walk', async (_, root) => {
+  const tree = await walkTree(root);
+  return [...tree.values()].filter((v) => !v.isDir).map((v) => v.abs);
+});
+
+// Mirror `src` into `dst`. Nothing changes until fs:syncApply; extras are only removed when asked.
+ipcMain.handle('fs:syncPlan', async (_, src, dst, deleteExtra) => {
+  const [a, b] = await Promise.all([walkTree(src), walkTree(dst)]);
+  const actions = [];
+  for (const [rel, s] of a) {
+    const d = b.get(rel);
+    const to = path.join(dst, rel);
+    if (s.isDir) { if (!d) actions.push({ type: 'mkdir', from: s.abs, to, rel }); continue; }
+    if (!d) actions.push({ type: 'copy', from: s.abs, to, rel });
+    else if (d.isDir) actions.push({ type: 'update', from: s.abs, to, rel }); // a folder is in the way
+    else if (d.size !== s.size || s.mtime > d.mtime + 1000) actions.push({ type: 'update', from: s.abs, to, rel });
+  }
+  if (deleteExtra) {
+    for (const [rel, d] of b) {
+      if (a.has(rel)) continue;
+      const parent = rel.includes('/') ? rel.slice(0, rel.lastIndexOf('/')) : '';
+      if (parent && !a.has(parent)) continue; // inside a folder that is already being removed
+      actions.push({ type: 'delete', from: null, to: d.abs, rel });
+    }
+  }
+  const order = { mkdir: 0, copy: 1, update: 2, delete: 3 };
+  actions.sort((x, y) => order[x.type] - order[y.type] || (x.type === 'delete' ? y.rel.length - x.rel.length : x.rel.length - y.rel.length));
+  return { actions, sameCount: [...a.keys()].length - actions.filter((x) => x.type !== 'delete').length };
+});
+
+ipcMain.handle('fs:syncApply', async (_, actions) => {
+  const errors = []; let done = 0;
+  for (const act of actions) {
+    try {
+      if (act.type === 'mkdir') await fsp.mkdir(act.to, { recursive: true });
+      else if (act.type === 'copy') await fsp.cp(act.from, act.to, { preserveTimestamps: true, errorOnExist: true, force: false });
+      else if (act.type === 'update') {
+        if (await exists(act.to)) await shell.trashItem(act.to); // the old copy goes to the Trash, not into the void
+        await fsp.cp(act.from, act.to, { preserveTimestamps: true, errorOnExist: true, force: false });
+      } else if (act.type === 'delete') await shell.trashItem(act.to);
+      done++;
+    } catch (e) { errors.push(`${act.rel}: ${fail(e).error}`); }
+  }
+  return { done, errors };
+});
+
+// Set permission bits (octal string such as "755") on items, optionally on everything inside folders.
+ipcMain.handle('fs:chmod', async (_, paths, mode, recursive) => {
+  const m = parseInt(mode, 8);
+  const errors = []; let count = 0;
+  for (const p of paths) {
+    const targets = [p];
+    if (recursive) {
+      const st = await fsp.lstat(p).catch(() => null);
+      if (st?.isDirectory()) targets.push(...[...(await walkTree(p)).values()].map((v) => v.abs));
+    }
+    for (const t of targets) {
+      try { await fsp.chmod(t, m); count++; } catch (e) { errors.push(`${path.basename(t)}: ${fail(e).error}`); }
+    }
+  }
+  return { count, errors };
+});
+
+// Git state of a folder: which of its entries are modified, new or deleted.
+function gitRun(cwd, args) {
+  return new Promise((resolve) => {
+    let out = '';
+    let c;
+    try { c = spawn('git', args, { cwd, stdio: ['ignore', 'pipe', 'ignore'] }); } catch { resolve(null); return; }
+    c.stdout.on('data', (d) => { out += d; });
+    c.on('error', () => resolve(null));
+    c.on('close', (code) => resolve(code === 0 ? out : null));
+  });
+}
+ipcMain.handle('fs:gitStatus', async (_, dir) => {
+  const top = await gitRun(dir, ['rev-parse', '--show-toplevel']);
+  if (top === null) return { repo: false, entries: [] };
+  const root = top.trim();
+  const out = (await gitRun(dir, ['status', '--porcelain=v1', '-z', '--untracked-files=normal'])) || '';
+  const parts = out.split(' ');
+  const entries = [];
+  for (let i = 0; i < parts.length; i++) {
+    const s = parts[i];
+    if (s.length < 4) continue;
+    const code = s.slice(0, 2);
+    if (code[0] === 'R' || code[0] === 'C') i++; // renames carry the old name as the next field
+    entries.push({ path: path.join(root, s.slice(3)), code });
+  }
+  return { repo: true, entries };
+});
+
 ipcMain.handle('fs:dirSize', async (_, root) => {
   const started = Date.now();
   let size = 0, count = 0, partial = false;

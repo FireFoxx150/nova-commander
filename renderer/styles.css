@@ -684,3 +684,29 @@ img.pk { width: 100%; height: 100%; object-fit: contain; display: block; }
 .dup-head { color: var(--text-2); font-size: 12px; margin-bottom: 4px; }
 .dup-row { display: flex; align-items: center; gap: 8px; padding: 2px 0; font-size: 12.5px; cursor: pointer; }
 .dup-row span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; user-select: text; }
+
+/* Compare panes: a coloured edge on rows that differ from the other pane */
+.row.cmp-only { box-shadow: inset 3px 0 0 var(--ok); }
+.row.cmp-diff { box-shadow: inset 3px 0 0 var(--accent); }
+/* Git badges */
+.git-badge { flex: none; margin-left: 6px; min-width: 14px; text-align: center; font-size: 10.5px; font-weight: 700; line-height: 16px; border-radius: 3px; color: #111; }
+.git-M { background: #e0a030; } .git-A { background: #62c48a; } .git-U { background: #7bb8e8; } .git-D { background: #f06a6a; } .git-R { background: #b08cf0; }
+/* Sync, permissions and rename-in-subfolders dialogs */
+.sync-modal { width: 580px; }
+.sync-opt { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+.sync-summary { font-weight: 600; margin-bottom: 4px; }
+.sync-list { list-style: none; margin: 0 0 12px; padding: 0; max-height: 300px; overflow-y: auto; font-size: 12.5px; }
+.sync-list li { padding: 2px 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sync-tag { display: inline-block; min-width: 88px; font-size: 11px; font-weight: 600; padding: 0 6px; margin-right: 6px; border-radius: 3px; }
+.sync-mkdir { background: #7bb8e8; color: #111; } .sync-copy { background: #62c48a; color: #111; } .sync-update { background: #e0a030; color: #111; } .sync-delete { background: #f06a6a; color: #111; }
+.perm-field, .perm-opt { display: flex; gap: 10px; align-items: center; margin: 6px 0; }
+.perm-mode { width: 90px; font-family: var(--mono); }
+.perm-err { color: var(--danger); min-height: 18px; font-size: 12.5px; }
+.rt-modal { width: 620px; }
+.rt-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 8px; }
+.rt-fields label { display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; }
+.rt-count { font-weight: 600; margin: 4px 0; }
+.rt-list { list-style: none; margin: 0 0 12px; padding: 0; max-height: 300px; overflow-y: auto; font-size: 12.5px; }
+.rt-list li { padding: 2px 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rt-list li.conflict { color: var(--danger); }
+.rt-arrow { color: var(--muted); margin: 0 4px; }

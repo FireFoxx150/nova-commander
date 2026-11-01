@@ -105,7 +105,7 @@ const DEFAULT_SETTINGS = {
   columns: { ext: true, age: true, mtime: true, ctime: false, size: true, dims: false, taken: false, duration: false, tag: false },
 };
 // Shared between windows (stored in window 1's record); everything else is per window.
-const SHARED_KEYS = ['settings', 'favGroups', 'recent', 'dropList', 'savedWindows', 'notes', 'folderBg', 'folderIcons', 'typeIcons', 'todos', 'recentDest', 'collapsed', 'rules', 'theme', 'showHidden'];
+const SHARED_KEYS = ['settings', 'favGroups', 'recent', 'dropList', 'savedWindows', 'notes', 'folderBg', 'folderIcons', 'typeIcons', 'todos', 'recentDest', 'collapsed', 'rules', 'theme', 'showHidden', 'compare'];
 const QUERY = new URLSearchParams(location.search);
 const MAIN_WIN = (QUERY.get('w') || '1') === '1';
 
@@ -128,6 +128,7 @@ const state = {
   todos: {}, // folder path -> [{ text, done }]
   recentDest: [], // recent copy/move destinations, newest first
   collapsed: {}, // sidebar section id -> true
+  compare: false, // highlight differences between the two panes
   rules: [], // File Automator rules
   scripts: [], // executables in the scripts folder
   settings: { ...DEFAULT_SETTINGS },
@@ -519,6 +520,7 @@ async function openFile(p) {
  * Refresh & watching
  * ======================================================= */
 async function refreshDir(dir) {
+  gitCache.delete(dir);
   const res = await api.list(dir);
   const touched = new Set();
   for (const pane of state.panes) {
@@ -827,6 +829,15 @@ function editPath(pane) {
   suggest();
 }
 
+// Compare panes: rows are marked against the other pane's folder (set by renderBody).
+let curCompare = null; // Map name -> entry from the other pane, or null when off
+function compareState(e) {
+  const o = curCompare.get(e.name);
+  if (!o) return 'cmp-only';
+  if (o.isDir !== e.isDir) return 'cmp-diff';
+  if (!e.isDir && (o.size !== e.size || Math.abs(o.mtime - e.mtime) > 1000)) return 'cmp-diff';
+  return '';
+}
 function rowClasses(e, col, focused) {
   const cls = ['row'];
   if (col.sel.has(e.path)) cls.push('sel');
@@ -835,6 +846,7 @@ function rowClasses(e, col, focused) {
   if (S().markRecent && !e.isDir && Date.now() - e.mtime < 3600e3) cls.push('recent-item');
   if (e.isLink) cls.push('link');
   if (tagOf(e.path)) cls.push('tagged');
+  if (curCompare) { const d = compareState(e); if (d) cls.push(d); }
   if (state.clipboard?.mode === 'cut' && state.clipboard.set.has(e.path)) cls.push('cut');
   return cls.join(' ');
 }
@@ -878,7 +890,7 @@ function listRowHtml(e, col, focused, cols) {
   const ext = e.isDir ? '' : extOf(e.name);
   const base = ext ? esc(e.name.slice(0, -(ext.length + 1))) : esc(e.name);
   const name = ext && S().showExtensions ? `${base}<span class="r-ext">.${esc(e.name.slice(-ext.length))}</span>` : base;
-  return `<div ${rowAttrs(e, col, focused)}>${rowIcon(e)}<span class="r-name">${name}</span>`
+  return `<div ${rowAttrs(e, col, focused)}>${rowIcon(e)}<span class="r-name">${name}</span>${gitBadge(e)}`
     + cols.map((c) => `<span class="${c.cls}${c.id === 'size' && e.isDir && !dirSizes.has(e.path) ? ' pending' : ''}"${c.id === 'size' ? ` style="--bar:${Math.min(100, Math.max(0, (sizeOf(e) / listMaxSize) * 100)).toFixed(1)}%"` : ''}>${c.cell(e)}</span>`).join('') + '</div>';
 }
 
@@ -911,9 +923,43 @@ function layoutMode(pane) {
   return w - Math.min(parents, 3) * S().parentColWidth >= 560 ? 'side' : 'stacked';
 }
 
+// Git badges: the status of each folder's git repository, fetched once and kept until refreshed.
+const gitCache = new Map(); // dir -> { exact: Map(path -> letter), dirs: Set(path) } | { none: true }
+const gitBusy = new Set();
+let curGit = null; // the badges for the folder being drawn
+function loadGit(dir) {
+  if (gitCache.has(dir) || gitBusy.has(dir)) return;
+  gitBusy.add(dir);
+  api.gitStatus(dir).then((r) => {
+    const info = { exact: new Map(), dirs: new Set() };
+    if (!r.repo) info.none = true;
+    for (const { path: p, code } of r.entries || []) {
+      const letter = code === '??' ? 'U' : (code[1] !== ' ' ? code[1] : code[0]);
+      info.exact.set(p, letter);
+      for (let up = P.dirname(p); up.length > dir.length && P.isInside(up, dir); up = P.dirname(up)) info.dirs.add(up);
+    }
+    gitCache.set(dir, info);
+  }).catch(() => gitCache.set(dir, { none: true })).finally(() => {
+    gitBusy.delete(dir);
+    for (const pane of visiblePanes()) if (tabOf(pane).columns.at(-1)?.path === dir) renderBody(pane);
+  });
+}
+function gitBadge(e) {
+  const info = curGit;
+  if (!info || info.none) return '';
+  const letter = info.exact.get(e.path) || (e.isDir && info.dirs.has(e.path) ? 'M' : '');
+  return letter ? `<span class="git-badge git-${letter}" title="Git: ${letter === 'U' ? 'untracked' : letter === 'M' ? 'modified' : letter === 'A' ? 'added' : letter === 'D' ? 'deleted' : letter}">${letter}</span>` : '';
+}
+
 function renderBody(pane) {
   const tab = tabOf(pane);
   const lastIdx = tab.columns.length - 1;
+  curGit = gitCache.get(tab.columns[lastIdx]?.path) || null;
+  if (tab.columns[lastIdx] && !gitCache.has(tab.columns[lastIdx].path)) loadGit(tab.columns[lastIdx].path);
+  // Compare panes: the other pane's current folder, by name.
+  const other = state.compare && state.dual ? state.panes[pane.index === 0 ? 1 : 0] : null;
+  const oc = other ? tabOf(other).columns.at(-1) : null;
+  curCompare = oc ? new Map(oc.entries.map((x) => [x.name, x])) : null;
   const isActive = activePane() === pane;
   pane.mode = layoutMode(pane);
   pane.bodyEl.className = `pane-body ${pane.mode}`;
@@ -1742,6 +1788,12 @@ function toggleDual() {
   updatePreview(true);
   saveState();
 }
+function toggleCompare() {
+  state.compare = !state.compare;
+  if (!state.dual && state.compare) toast('Turn on dual pane (Ctrl+D) to compare panes');
+  for (const p of state.panes) renderPane(p);
+  saveState();
+}
 function toggleInfo() {
   state.info = !state.info;
   syncToggles();
@@ -2074,6 +2126,7 @@ function itemMenu(x, y, pane, tab, col) {
   if (single && !single.isDir) items.push({ label: 'Save as template', icon: 'template', act: () => saveAsTemplate(single.path) });
   if (paths.some((p) => IMG_RE.test(p))) items.push({ label: 'Convert / resize images…', icon: 'image', key: kb('images'), act: () => batchImages(paths, col.path) });
   if (single && IMG_RE.test(single.name)) items.push({ label: 'Use as folder background', icon: 'image', act: () => setFolderBg(col.path, single.path) });
+  items.push({ label: 'Permissions…', icon: 'lock', act: () => permissionsDialog(paths) });
   if (single?.isDir) {
     items.push({ label: 'Change folder icon…', icon: 'image', act: () => chooseIcon('folder', single.path) });
     if (state.folderIcons[single.path]) items.push({ label: 'Reset folder icon', icon: 'x', act: () => setIcon('folder', single.path, null) });
@@ -2145,6 +2198,8 @@ async function backgroundMenu(x, y, pane, tab, dir) {
     { label: state.notes[dir] ? 'Edit folder note…' : 'Add folder note…', icon: 'note', key: kb('note'), act: () => editNote(dir) },
     { label: 'To-do list…', icon: 'note', act: () => editTodos(dir) },
     { label: 'Find duplicates…', icon: 'search', act: () => findDuplicates(dir) },
+    { label: 'Rename in subfolders…', icon: 'rename', act: () => renameInTree(dir) },
+    ...(state.dual ? [{ label: 'Sync this folder to other pane…', icon: 'refresh', act: () => syncTo(dir, currentDir(tabOf(otherPane()))) }] : []),
     ...(state.folderBg[dir] ? [{ label: 'Remove folder background', icon: 'image', act: () => setFolderBg(dir, null) }] : []),
     { label: 'File Automator…', icon: 'wand', key: kb('automator'), act: () => fileAutomator(dir, tab.columns.find((c) => c.path === dir)?.entries || []) },
     ...scriptItems([], dir),
@@ -2178,6 +2233,7 @@ function paneMenu(x, y, pane) {
     ...views.map(([v, label, id]) => ({ label: `${label}${tab.view === v ? '  ●' : ''}`, icon: v === 'grid' ? 'grid' : v, key: kb(id), act: () => setView(pane, v) })),
     { label: state.showHidden ? 'Hide hidden files' : 'Show hidden files', icon: 'eye', key: kb('toggleHidden'), act: toggleHidden },
     { label: 'Search in this folder…', icon: 'searchFolder', key: kb('search'), act: () => openSearch(pane) },
+    { label: state.compare ? '✓ Compare with other pane' : 'Compare with other pane', icon: 'columns', key: kb('comparePanes'), act: toggleCompare },
     { label: 'Choose columns…', icon: 'columns', act: chooseColumns },
     { label: S().layout === 'stacked' ? 'Panes side by side' : 'Panes above each other', icon: 'dual', act: () => { S().layout = S().layout === 'stacked' ? 'side' : 'stacked'; settingsChanged(); applySplit(); } },
     '-',
@@ -2232,6 +2288,7 @@ function moveCursor(pane, tab, to, shift) {
  * Escape, Home/End, PageUp/Down, type-ahead — and Alt+0…7 tags stay fixed. */
 const sel = () => selectedPaths();
 const ACTIONS = [
+  { id: 'comparePanes', label: 'Compare with other pane', keys: ['Ctrl+Alt+M'], run: () => toggleCompare() },
   ...[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => ({ id: `fav${n}`, label: `Go to favourite ${n}`, keys: [`Ctrl+Alt+${n}`], run: ({ pane }) => {
     const favs = state.favGroups.flatMap((g) => g.items);
     if (favs[n - 1]) navigate(pane, tabOf(pane), favs[n - 1].path);
