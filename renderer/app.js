@@ -2243,6 +2243,7 @@ function paneMenu(x, y, pane) {
     { label: 'Open in terminal', icon: 'terminal', act: () => openTerminal(dir) },
     { label: 'Copy folder path', icon: 'link', act: () => copyPaths([dir]) },
     { label: 'Show in system file manager', icon: 'reveal', act: () => api.open(dir) },
+    { label: 'Show terminal panel', icon: 'terminal', act: () => toggleTerminal(true) },
     { label: 'Connect to server…', icon: 'network', key: kb('connect'), act: connectDialog },
     '-',
     { label: 'Settings…', icon: 'settings', key: kb('settings'), act: openSettings },
@@ -2288,6 +2289,7 @@ function moveCursor(pane, tab, to, shift) {
  * Escape, Home/End, PageUp/Down, type-ahead — and Alt+0…7 tags stay fixed. */
 const sel = () => selectedPaths();
 const ACTIONS = [
+  { id: 'terminal', label: 'Show or hide the terminal panel', keys: ['Ctrl+`'], run: () => toggleTerminal() },
   { id: 'comparePanes', label: 'Compare with other pane', keys: ['Ctrl+Alt+M'], run: () => toggleCompare() },
   ...[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => ({ id: `fav${n}`, label: `Go to favourite ${n}`, keys: [`Ctrl+Alt+${n}`], run: ({ pane }) => {
     const favs = state.favGroups.flatMap((g) => g.items);
@@ -3867,6 +3869,7 @@ async function init() {
   }
   applySplit();
   bindChrome();
+  bindTerminal();
 
   await Promise.all(state.panes.map(async (pane) => {
     if (pane.index === 1 && !state.dual) return;

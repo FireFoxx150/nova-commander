@@ -5,6 +5,7 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' file: data:; media-src file:; frame-src file:; font-src 'self' file:; style-src 'self' 'unsafe-inline'; script-src 'self'">
   <title>Nova Commander</title>
   <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="vendor/xterm.css">
 </head>
 <body>
   <svg width="0" height="0" style="position:absolute" aria-hidden="true">
@@ -35,6 +36,7 @@
         <button class="sb-btn toggle" id="btn-hidden" title="Show hidden files (Ctrl+H)"></button>
         <button class="sb-btn toggle" id="btn-dual" title="Dual pane (Ctrl+D)"></button>
         <button class="sb-btn toggle" id="btn-preview" title="Details / preview panel (Ctrl+P)"></button>
+        <button class="sb-btn toggle" id="btn-term" title="Terminal (Ctrl+`)"></button>
         <button class="sb-btn" id="btn-undo" title="Undo (Ctrl+Z)"></button>
         <button class="sb-btn" id="btn-ops" title="File operations"><span class="badge" hidden></span></button>
       </div>
@@ -46,6 +48,15 @@
     </div>
   </main>
 
+  <section id="term" hidden>
+    <div class="term-head">
+      <span class="term-title">Terminal</span><span class="term-dir"></span>
+      <button data-term="cd" title="Change the terminal to the current folder">Current folder</button>
+      <button data-term="restart" title="Start a new shell">Restart</button>
+      <button data-term="hide" title="Hide (Ctrl+`)">Hide</button>
+    </div>
+    <div id="term-body"></div>
+  </section>
   <div id="ops" hidden></div>
   <div id="toasts"></div>
   <div id="ctxmenu" class="menu" hidden></div>
@@ -53,6 +64,8 @@
   <div id="drag-tip" hidden></div>
   <div id="drag-ghost"></div>
 
+  <script src="vendor/xterm.js"></script>
+  <script src="vendor/addon-fit.js"></script>
   <script src="icons.js"></script>
   <script src="app.js"></script>
   <script src="tools.js"></script>

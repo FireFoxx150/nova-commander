@@ -9,6 +9,9 @@ Electron (MIT) and the Chromium components it ships are licensed under the terms
 in `LICENSES.chromium.html` inside the installed application. npm dependencies
 are MIT, ISC, BSD-2-Clause or Apache-2.0.
 
+xterm.js (`renderer/vendor/xterm.js`, `xterm.css`, `addon-fit.js`) is licensed under the MIT
+licence. Its full text is in `renderer/vendor/XTERM-LICENSE.txt`.
+
 Icon themes (Papirus, Mint-L, Adwaita and others) are not included. The app
 reads any theme you have installed on your system.
 

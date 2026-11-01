@@ -26,7 +26,7 @@ modules:
       - cp -a node_modules/electron/dist/. /app/lib/nova-commander/
       - mv /app/lib/nova-commander/electron /app/lib/nova-commander/nova-commander
       - rm -f /app/lib/nova-commander/resources/default_app.asar
-      - cp -a main.js preload.js package.json icon.png renderer LICENSE THIRD_PARTY_NOTICES.md /app/lib/nova-commander/resources/app/
+      - cp -a main.js preload.js pty-helper.py package.json icon.png renderer LICENSE THIRD_PARTY_NOTICES.md /app/lib/nova-commander/resources/app/
       - install -Dm755 flatpak/nova-commander.sh /app/bin/nova-commander
       - install -Dm644 flatpak/com.github.FireFoxx150.NovaCommander.desktop /app/share/applications/com.github.FireFoxx150.NovaCommander.desktop
       - install -Dm644 flatpak/com.github.FireFoxx150.NovaCommander.metainfo.xml /app/share/metainfo/com.github.FireFoxx150.NovaCommander.metainfo.xml

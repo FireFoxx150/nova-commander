@@ -595,6 +595,68 @@ async function renameInTree(dir) {
 }
 
 /* =========================================================
+ * Terminal panel: a shell under the panes, started in the current folder
+ * ======================================================= */
+let term = null; // { id, xterm, fit }; id is null once the shell has ended
+let termOpen = false;
+const shq = (p) => `'${p.replace(/'/g, "'\\''")}'`;
+api.onTermData((id, bytes) => { if (term && term.id === id) term.xterm.write(bytes); });
+api.onTermExit((id) => {
+  if (!term || term.id !== id) return;
+  term.id = null;
+  term.xterm.write('\r\n\x1b[90m[shell ended. Press Restart to start a new one]\x1b[0m\r\n');
+});
+async function startTerm(dir) {
+  const body = $('#term-body');
+  body.innerHTML = '';
+  const xterm = new Terminal({ fontFamily: '"JetBrains Mono", "Fira Code", "Cascadia Code", monospace', fontSize: 13, cursorBlink: true, scrollback: 5000, theme: { background: '#0c0c0c', foreground: '#e5e5e5', cursor: '#e5e5e5' } });
+  const fit = new FitAddon.FitAddon();
+  xterm.loadAddon(fit);
+  xterm.open(body);
+  fit.fit();
+  term = { id: null, xterm, fit };
+  xterm.onData((d) => { if (term.id) api.termInput(term.id, d); });
+  // Tell the helper the new size, so programs such as less and htop lay out correctly.
+  xterm.onResize(({ cols, rows }) => { if (term?.id) api.termInput(term.id, `\0R${cols},${rows}\0`); });
+  term.id = await api.termStart(dir, xterm.cols, xterm.rows);
+  xterm.focus();
+}
+async function showTerminal(dir) {
+  termOpen = true;
+  $('#term').hidden = false;
+  $('#btn-term').classList.add('on');
+  $('.term-dir', $('#term')).textContent = P.display(dir || currentDir(tabOf(activePane())));
+  if (!term || !term.id) await startTerm(dir || currentDir(tabOf(activePane())));
+  else term.xterm.focus();
+}
+function hideTerminal() {
+  termOpen = false;
+  $('#term').hidden = true;
+  $('#btn-term').classList.remove('on');
+}
+function toggleTerminal(open = !termOpen) {
+  if (open) showTerminal(); else hideTerminal();
+}
+function bindTerminal() {
+  $('#term').addEventListener('click', async (e) => {
+    const b = e.target.closest('[data-term]');
+    if (!b) return;
+    const dir = currentDir(tabOf(activePane()));
+    if (b.dataset.term === 'hide') hideTerminal();
+    else if (b.dataset.term === 'cd') { if (term?.id) api.termInput(term.id, `cd ${shq(dir)}\r`); $('.term-dir', $('#term')).textContent = P.display(dir); }
+    else if (b.dataset.term === 'restart') {
+      if (term?.id) api.termKill(term.id);
+      if (term) term.xterm.dispose();
+      term = null;
+      await startTerm(dir);
+      $('.term-dir', $('#term')).textContent = P.display(dir);
+    }
+  });
+  $('#btn-term').innerHTML = line('terminal');
+  $('#btn-term').onclick = () => toggleTerminal();
+}
+
+/* =========================================================
  * Folder notes and backgrounds
  * ======================================================= */
 async function editNote(dir) {

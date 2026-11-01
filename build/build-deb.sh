@@ -26,7 +26,7 @@ mkdir -p "$OPT/resources/app"
 cp -a "$ELECTRON_DIST"/. "$OPT/"
 mv "$OPT/electron" "$OPT/$NAME"
 rm -f "$OPT/resources/default_app.asar"
-cp -a main.js preload.js package.json icon.png icon.svg renderer "$OPT/resources/app/"
+cp -a main.js preload.js pty-helper.py package.json icon.png icon.svg renderer "$OPT/resources/app/"
 # GPL v3 asks that the licence travel with the program.
 cp LICENSE THIRD_PARTY_NOTICES.md "$OPT/"
 mkdir -p "$PKG/usr/share/doc/$NAME"

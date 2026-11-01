@@ -1887,6 +1887,22 @@ ipcMain.on('win:min', (e) => winOf(e)?.minimize());
 ipcMain.on('win:max', (e) => { const w = winOf(e); if (w) (w.isMaximized() ? w.unmaximize() : w.maximize()); });
 ipcMain.on('win:close', (e) => winOf(e)?.close());
 ipcMain.handle('win:isMax', (e) => !!winOf(e)?.isMaximized());
+
+// Terminal panel: one shell per session, run through pty-helper.py (Python's pty module).
+const terms = new Map(); // id -> { child, wc }
+let termSeq = 0;
+ipcMain.handle('term:start', (e, cwd, cols, rows) => {
+  const id = ++termSeq;
+  const wc = e.sender;
+  const child = spawn('python3', [path.join(__dirname, 'pty-helper.py'), process.env.SHELL || '/bin/bash', cwd, String(cols), String(rows)], { stdio: ['pipe', 'pipe', 'ignore'] });
+  terms.set(id, { child, wc });
+  child.stdout.on('data', (d) => { if (!wc.isDestroyed()) wc.send('term:data', id, new Uint8Array(d)); });
+  child.on('error', () => { if (!wc.isDestroyed()) wc.send('term:exit', id); terms.delete(id); });
+  child.on('close', () => { if (!wc.isDestroyed()) wc.send('term:exit', id); terms.delete(id); });
+  return id;
+});
+ipcMain.on('term:input', (_, id, data) => { const t = terms.get(id); if (t && t.child.stdin.writable) t.child.stdin.write(Buffer.from(data, 'utf8')); });
+ipcMain.on('term:kill', (_, id) => { const t = terms.get(id); if (t) { terms.delete(id); t.child.kill(); } });
 // Pick an image file for a custom folder or file-type icon.
 ipcMain.handle('dialog:pickImage', async (e) => {
   const r = await dialog.showOpenDialog(winOf(e) || undefined, { properties: ['openFile'], filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'ico'] }] });
