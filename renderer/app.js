@@ -1128,13 +1128,14 @@ function renderSidebar() {
   // Cloud accounts (rclone), each mounted as a folder under ~/Cloud.
   const cs = state.cloud;
   let cloud = '';
-  if (cs && cs.installed === false) cloud = `<div class="sb-empty">Install rclone to add cloud accounts:<br><code>sudo apt install rclone fuse3</code></div>`;
+  if (cs && cs.flatpak) cloud = `<div class="sb-empty">Cloud accounts need the .deb version of Nova Commander. The Flatpak can’t mount them.</div>`;
+  else if (cs && cs.installed === false) cloud = `<div class="sb-empty">Install rclone to add cloud accounts:<br><code>sudo apt install rclone fuse3</code></div>`;
   else if (cs && cs.error) cloud = `<div class="sb-empty">${esc(cs.error)}</div>`;
   else for (const a of cs?.accounts || []) {
     const st = a.mounted ? 'mounted' : a.mounting ? 'connecting…' : 'not mounted';
     cloud += `<div class="sb-item" data-cloud="${esc(a.name)}" data-mounted="${a.mounted ? 1 : 0}" title="${esc(a.mountpoint)}"><span class="si-icon">${line('cloud')}</span><span class="si-name">${esc(a.name)}</span><span class="sb-st">${st}</span></div>`;
   }
-  cloud += `<div class="sb-item sb-action" data-cloud-add><span class="si-icon">${line('plus')}</span><span class="si-name">Add cloud account…</span></div>`;
+  if (!cs?.flatpak) cloud += `<div class="sb-item sb-action" data-cloud-add><span class="si-icon">${line('plus')}</span><span class="si-name">Add cloud account…</span></div>`;
   html += sbSection('cloud', 'Cloud', cloud, { head: `<button class="ib" data-cloud-refresh title="Refresh">${line('refresh')}</button>` });
   if (S().showRecent && state.recent.length) {
     let body = '';

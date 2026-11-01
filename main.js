@@ -1301,6 +1301,8 @@ const isMounted = (mp) => {
 const notifyCloud = () => { for (const w of windows) if (!w.isDestroyed()) w.webContents.send('cloud:changed'); };
 
 async function cloudStatus() {
+  // Mounting needs FUSE, which a Flatpak sandbox can't use. The .deb package supports it.
+  if (process.env.FLATPAK_ID) return { installed: false, flatpak: true, accounts: [] };
   const bin = tool('rclone');
   if (!bin) return { installed: false, accounts: [] };
   const r = await run(`rc-${Date.now()}`, bin, ['listremotes']);
