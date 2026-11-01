@@ -405,7 +405,8 @@ function gitRun(cwd, args) {
   return new Promise((resolve) => {
     let out = '';
     let c;
-    try { c = spawn('git', args, { cwd, stdio: ['ignore', 'pipe', 'ignore'] }); } catch { resolve(null); return; }
+    // A repository's own config can name a program to run (core.fsmonitor), so turn that off.
+    try { c = spawn('git', ['-c', 'core.fsmonitor=false', ...args], { cwd, stdio: ['ignore', 'pipe', 'ignore'] }); } catch { resolve(null); return; }
     c.stdout.on('data', (d) => { out += d; });
     c.on('error', () => resolve(null));
     c.on('close', (code) => resolve(code === 0 ? out : null));
@@ -1257,6 +1258,9 @@ ipcMain.handle('arc:edit', async (_, { archive, op, innerDir = '', paths = [], e
   const base = path.basename(archive);
   if (TAR_RE.test(base)) return { ok: false, error: 'Tar archives can’t be edited. Use zip or 7z.' };
   const tmpArc = path.join(path.dirname(archive), `.${base}.nc-${Date.now()}${path.extname(base)}`);
+  // The folder inside the archive comes from the archive's own names, so it must stay inside it.
+  const dirRel = String(innerDir || '').replace(/\\/g, '/');
+  if (dirRel.startsWith('/') || dirRel.split('/').includes('..')) return { ok: false, error: 'That folder can’t be used in the archive' };
   const stage = await fsp.mkdtemp(path.join(os.tmpdir(), 'nc-arc-'));
   try {
     await fsp.copyFile(archive, tmpArc);
@@ -1267,9 +1271,11 @@ ipcMain.handle('arc:edit', async (_, { archive, op, innerDir = '', paths = [], e
     if (op === 'add') {
       const rels = [];
       for (const src of paths) {
-        const rel = path.posix.join(innerDir, path.basename(src));
-        await fsp.mkdir(path.dirname(path.join(stage, rel)), { recursive: true });
-        await fsp.cp(src, path.join(stage, rel), { recursive: true, errorOnExist: false, force: true });
+        const rel = path.posix.join(dirRel, path.basename(src));
+        const dst = path.resolve(stage, rel);
+        if (!dst.startsWith(stage + path.sep)) throw new Error('Path leaves the archive folder');
+        await fsp.mkdir(path.dirname(dst), { recursive: true });
+        await fsp.cp(src, dst, { recursive: true, errorOnExist: false, force: true });
         rels.push(rel);
       }
       args = ['a', '-y', '--', tmpArc, ...rels];
