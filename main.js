@@ -1311,19 +1311,32 @@ async function cloudStatus() {
   if (process.env.FLATPAK_ID) return { installed: false, flatpak: true, accounts: [] };
   const bin = tool('rclone');
   if (!bin) return { installed: false, accounts: [] };
-  const r = await run(`rc-${Date.now()}`, bin, ['listremotes']);
-  const names = r.code === 0 ? r.out.split('\n').map((s) => s.trim().replace(/:$/, '')).filter(Boolean) : [];
+  const r = await run(`rc-${Date.now()}`, bin, ['listremotes', '--long']); // lines look like "name: type"
+  const remotes = r.code === 0 ? r.out.split('\n').map((s) => s.trim().match(/^(.+?):\s+(\S+)$/)).filter(Boolean) : [];
   return {
     installed: true,
     error: r.code === 0 ? null : toolError(r.out, r.code),
-    accounts: names.map((name) => {
+    accounts: remotes.map(([, name, type]) => {
       const mp = path.join(cloudRoot(), name);
       const m = cloudMounts.get(name);
-      return { name, mountpoint: mp, mounted: isMounted(mp), mounting: !!m && !m.exited };
+      return { name, type, mountpoint: mp, mounted: isMounted(mp), mounting: !!m && !m.exited };
     }),
   };
 }
 ipcMain.handle('cloud:status', () => cloudStatus());
+
+// Copies local files into the root of a cloud remote, one at a time; the first failure stops the batch.
+ipcMain.handle('cloud:upload', async (_, name, files) => {
+  const bin = tool('rclone');
+  if (!bin) return { ok: false, error: 'rclone is not installed. Run: sudo apt install rclone fuse3' };
+  if (!/^[^:/\\]+$/.test(name)) return { ok: false, error: 'Bad account name' };
+  for (const f of files) {
+    const verb = (await fsp.stat(f)).isDirectory() ? 'copy' : 'copyto';
+    const r = await run(`up-${Date.now()}`, bin, [verb, f, `${name}:${path.basename(f)}`]);
+    if (r.code !== 0) return { ok: false, error: toolError(r.out, r.code) };
+  }
+  return { ok: true };
+});
 
 ipcMain.handle('cloud:mount', async (_, name, { cacheGB = 10, readOnly = false } = {}) => {
   const bin = tool('rclone');

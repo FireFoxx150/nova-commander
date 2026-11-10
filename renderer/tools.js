@@ -708,6 +708,15 @@ function addCloudAccount() {
   term?.id && api.termInput(term.id, 'rclone config\r');
   toast('Finish the sign-in in the terminal, then press Refresh in the Cloud section');
 }
+// Upload files from disk into the root of a MEGA account.
+async function megaUpload(name) {
+  const files = await api.pickFiles();
+  if (!files.length) return;
+  toast(`Uploading ${plural(files.length, 'item')} to ${name}…`);
+  const r = await api.cloud.upload(name, files);
+  if (r.ok) toast(`Uploaded ${plural(files.length, 'item')} to ${name}`, 'success');
+  else toast(`Upload to ${name} failed — ${r.error}`, 'error', { timeout: 9000 });
+}
 async function cloudMenu(name, mounted, x, y) {
   showMenu(x, y, [
     { label: mounted ? 'Open' : 'Connect and open', icon: 'open', act: () => openCloud(name, mounted) },

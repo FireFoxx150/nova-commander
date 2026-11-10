@@ -79,6 +79,7 @@ contextBridge.exposeInMainWorld('api', {
     status: () => invoke('cloud:status'),
     mount: (name, opts) => invoke('cloud:mount', name, opts),
     unmount: (name) => invoke('cloud:unmount', name),
+    upload: (name, files) => invoke('cloud:upload', name, files),
     onChanged: (fn) => ipcRenderer.on('cloud:changed', () => fn()),
   },
   writeNew: (dir, name, bytes) => invoke('fs:writeNew', dir, name, bytes),

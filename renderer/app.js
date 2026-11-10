@@ -1137,6 +1137,14 @@ function renderSidebar() {
   }
   if (!cs?.flatpak) cloud += `<div class="sb-item sb-action" data-cloud-add><span class="si-icon">${line('plus')}</span><span class="si-name">Add cloud account…</span></div>`;
   html += sbSection('cloud', 'Cloud', cloud, { head: `<button class="ib" data-cloud-refresh title="Refresh">${line('refresh')}</button>` });
+  // MEGA accounts (rclone remotes of type mega) get an upload row in their own section.
+  if (cs?.installed && !cs.flatpak) {
+    const megas = (cs.accounts || []).filter((a) => a.type === 'mega');
+    let mega = megas.map((a) => `<div class="sb-item sb-action" data-mega-upload="${esc(a.name)}" title="Copy files from this computer into ${esc(a.name)}"><span class="si-icon">${line('upload')}</span><span class="si-name">Upload to ${esc(a.name)}…</span></div>`).join('');
+    if (!megas.length) mega = `<div class="sb-empty">No MEGA account yet</div>`;
+    mega += `<div class="sb-item sb-action" data-cloud-add><span class="si-icon">${line('plus')}</span><span class="si-name">Add MEGA account…</span></div>`;
+    html += sbSection('mega', 'MEGA', mega);
+  }
   if (S().showRecent && state.recent.length) {
     let body = '';
     for (const p of state.recent.slice(0, 8)) {
@@ -3739,6 +3747,8 @@ function bindChrome() {
     if (e.target.closest('[data-connect]')) { connectDialog(); return; }
     if (e.target.closest('[data-cloud-add]')) { addCloudAccount(); return; }
     if (e.target.closest('[data-cloud-refresh]')) { refreshCloud(); return; }
+    const mu = e.target.closest('[data-mega-upload]');
+    if (mu) { megaUpload(mu.dataset.megaUpload); return; }
     const cl = e.target.closest('[data-cloud]');
     if (cl) { openCloud(cl.dataset.cloud, cl.dataset.mounted === '1'); return; }
     const tg = e.target.closest('[data-tagged]');
