@@ -7,6 +7,10 @@ const crypto = require('crypto');
 const { pathToFileURL } = require('url');
 const { spawn, spawnSync } = require('child_process');
 
+// Portable mode: a file named "portable" next to the program moves all settings into a "data" folder beside it.
+const appDir = path.dirname(process.execPath);
+if (fs.existsSync(path.join(appDir, 'portable'))) app.setPath('userData', path.join(appDir, 'data'));
+
 // Stable WM_CLASS so the taskbar matches the window to nova-commander.desktop.
 app.commandLine.appendSwitch('class', 'nova-commander');
 
@@ -2108,10 +2112,13 @@ ipcMain.handle('win:isMax', (e) => !!winOf(e)?.isMaximized());
 // Terminal panel: one shell per session, run through pty-helper.py (Python's pty module).
 const terms = new Map(); // id -> { child, wc }
 let termSeq = 0;
-ipcMain.handle('term:start', (e, cwd, cols, rows) => {
+ipcMain.handle('term:start', (e, cwd, cols, rows, shell) => {
   const id = ++termSeq;
   const wc = e.sender;
-  const child = spawn('python3', [path.join(__dirname, 'pty-helper.py'), process.env.SHELL || '/bin/bash', cwd, String(cols), String(rows)], { stdio: ['pipe', 'pipe', 'ignore'] });
+  // The chosen shell must be an executable with an absolute path; otherwise use the login shell.
+  const usable = (p) => { try { fs.accessSync(p, fs.constants.X_OK); return true; } catch { return false; } };
+  const bin = shell && path.isAbsolute(shell) && usable(shell) ? shell : process.env.SHELL || '/bin/bash';
+  const child = spawn('python3', [path.join(__dirname, 'pty-helper.py'), bin, cwd, String(cols), String(rows)], { stdio: ['pipe', 'pipe', 'ignore'] });
   terms.set(id, { child, wc });
   child.stdout.on('data', (d) => { if (!wc.isDestroyed()) wc.send('term:data', id, new Uint8Array(d)); });
   child.on('error', () => { if (!wc.isDestroyed()) wc.send('term:exit', id); terms.delete(id); });

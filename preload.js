@@ -14,7 +14,7 @@ contextBridge.exposeInMainWorld('api', {
   syncApply: (actions) => invoke('fs:syncApply', actions),
   chmod: (paths, mode, recursive) => invoke('fs:chmod', paths, mode, recursive),
   gitStatus: (dir) => invoke('fs:gitStatus', dir),
-  termStart: (cwd, cols, rows) => invoke('term:start', cwd, cols, rows),
+  termStart: (cwd, cols, rows, shell) => invoke('term:start', cwd, cols, rows, shell),
   termInput: (id, data) => ipcRenderer.send('term:input', id, data),
   termKill: (id) => ipcRenderer.send('term:kill', id),
   onTermData: (fn) => ipcRenderer.on('term:data', (_, id, bytes) => fn(id, bytes)),

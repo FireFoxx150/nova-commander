@@ -647,7 +647,7 @@ async function startTerm(dir) {
   xterm.onData((d) => { if (term.id) api.termInput(term.id, d); });
   // Tell the helper the new size, so programs such as less and htop lay out correctly.
   xterm.onResize(({ cols, rows }) => { if (term?.id) api.termInput(term.id, `\0R${cols},${rows}\0`); });
-  term.id = await api.termStart(dir, xterm.cols, xterm.rows);
+  term.id = await api.termStart(dir, xterm.cols, xterm.rows, S().termShell);
   xterm.focus();
 }
 async function showTerminal(dir) {
@@ -1272,4 +1272,20 @@ async function selectByPattern(pane, add) {
   const re = wildcardRe(glob);
   for (const e of visible(tab, col)) if (re.test(e.name)) { if (add) col.sel.add(e.path); else col.sel.delete(e.path); }
   renderPane(pane);
+}
+
+// Keeps the current folder filter under a name, so the filter box can reuse it.
+async function saveFilter(text) {
+  const name = await dialog({
+    title: 'Save filter',
+    html: `<div class="cz-grid"><label>Name</label><input data-k="name" spellcheck="false" value="${esc(text)}"></div>
+      <div class="m-actions"><button class="btn" data-cancel>Cancel</button><button class="btn primary" data-submit>Save</button></div>`,
+    setup: (root) => { const i = $('[data-k="name"]', root); i.focus(); i.select(); },
+    submit: (root) => $('[data-k="name"]', root).value.trim() || undefined,
+  });
+  if (!name) return;
+  const kept = S().savedFilters.filter((f) => f.name !== name);
+  S().savedFilters = [...kept, { name: name.slice(0, 40), text }];
+  saveState();
+  toast(`Saved filter “${name}”`, 'success');
 }
