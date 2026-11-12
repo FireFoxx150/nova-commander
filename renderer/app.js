@@ -1470,6 +1470,28 @@ async function deletePermanently(paths) {
   await refreshDirs(paths.map(P.dirname));
 }
 
+// Empties ~/.local/share/Trash: the files and their .trashinfo records. Not undoable.
+async function emptyTrash() {
+  const base = `${HOME}/.local/share/Trash`;
+  const files = await api.list(`${base}/files`);
+  if (!files.ok) { toast(`Can't open the Trash — ${files.error}`, 'error'); return; }
+  const info = await api.list(`${base}/info`);
+  const paths = [...files.entries, ...(info.ok ? info.entries : [])].map((e) => e.path);
+  if (!paths.length) { toast('The Trash is already empty'); return; }
+  await deletePermanently(paths);
+}
+
+// Empties ~/.local/share/Trash: the files and their .trashinfo records. Not undoable.
+async function emptyTrash() {
+  const base = `${HOME}/.local/share/Trash`;
+  const files = await api.list(`${base}/files`);
+  if (!files.ok) { toast(`Can't open the Trash — ${files.error}`, 'error'); return; }
+  const info = await api.list(`${base}/info`);
+  const paths = [...files.entries, ...(info.ok ? info.entries : [])].map((e) => e.path);
+  if (!paths.length) { toast('The Trash is already empty'); return; }
+  await deletePermanently(paths);
+}
+
 function pushUndo(entry) {
   state.undo.push(entry);
   if (state.undo.length > 50) state.undo.shift();
