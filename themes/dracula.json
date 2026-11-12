@@ -1,0 +1,1 @@
+{"name": "Dracula", "base": "black", "vars": {"--bg": "#21222c", "--panel": "#21222c", "--pane": "#282a36", "--pane-2": "#303341", "--line": "#44475a", "--line-2": "#565a72", "--sel": "#44475a", "--sel-dim": "#3a3d4f", "--sel-line": "#bd93f9", "--text": "#f8f8f2", "--text-2": "#bfc6d6", "--muted": "#6272a4", "--accent": "#bd93f9", "--danger": "#ff5555", "--ok": "#50fa7b"}}

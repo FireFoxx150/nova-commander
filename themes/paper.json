@@ -1,0 +1,1 @@
+{"name": "Paper", "base": "light", "vars": {"--bg": "#f4efe6", "--panel": "#ebe4d6", "--pane": "#fffdf8", "--pane-2": "#f3ede0", "--line": "#d9cfbd", "--line-2": "#c7bba6", "--sel": "#f0d9a8", "--sel-dim": "#f5e6c4", "--sel-line": "#b5651d", "--text": "#3b2f23", "--text-2": "#6b5b48", "--muted": "#9a8a74", "--accent": "#b5651d", "--danger": "#b03a2e", "--ok": "#4f7a28"}}

@@ -1,0 +1,1 @@
+{"name": "Forest", "base": "black", "vars": {"--bg": "#101a14", "--panel": "#101a14", "--pane": "#15211a", "--pane-2": "#1b2b21", "--line": "#2a4034", "--line-2": "#37543f", "--sel": "#24422f", "--sel-dim": "#1d3526", "--sel-line": "#7fc97f", "--text": "#dfe9dc", "--text-2": "#a6b9a4", "--muted": "#6b8570", "--accent": "#7fc97f", "--danger": "#e07a6a", "--ok": "#8fd694"}}
