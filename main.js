@@ -1849,6 +1849,30 @@ ipcMain.handle('thumb:video', async (_, p) => {
 });
 
 // Writes bytes produced by the renderer (batch image tool) to a new file next to the source.
+// Reads up to `max` bytes for the viewer, editor and compare. Folders are refused.
+ipcMain.handle('fs:readBytes', async (_, p, max) => {
+  try {
+    const st = await fsp.stat(p);
+    if (st.isDirectory()) throw new Error('That is a folder');
+    const n = Math.min(st.size, max);
+    const buf = Buffer.alloc(n);
+    const fh = await fsp.open(p, 'r');
+    try { await fh.read(buf, 0, n, 0); } finally { await fh.close(); }
+    return ok({ size: st.size, bytes: buf });
+  } catch (e) { return fail(e); }
+});
+// Writes text to a temp file, then renames it over the original, so a failed save can't leave a half-written file.
+ipcMain.handle('fs:saveText', async (_, p, text) => {
+  try {
+    const real = await fsp.realpath(p);
+    const mode = (await fsp.stat(real)).mode & 0o7777;
+    const tmp = `${real}.nova-${process.pid}.tmp`;
+    await fsp.writeFile(tmp, text, { mode });
+    await fsp.chmod(tmp, mode);
+    await fsp.rename(tmp, real);
+    return ok({});
+  } catch (e) { return fail(e); }
+});
 ipcMain.handle('fs:writeNew', async (_, dir, name, bytes) => {
   try {
     if (!validName(name)) throw new Error('Invalid file name');

@@ -2341,6 +2341,11 @@ const sel = () => selectedPaths();
 const ACTIONS = [
   { id: 'terminal', label: 'Show or hide the terminal panel', keys: ['Ctrl+`'], run: () => toggleTerminal() },
   { id: 'comparePanes', label: 'Compare with other pane', keys: ['Ctrl+Alt+M'], run: () => toggleCompare() },
+  { id: 'view', label: 'View file', keys: ['F3'], run: () => { const ps = sel(); if (ps.length === 1) viewFile(ps[0]); else toast('Select one file to view'); } },
+  { id: 'edit', label: 'Edit file', keys: ['F4'], run: () => { const ps = sel(); if (ps.length === 1) editFile(ps[0]); else toast('Select one file to edit'); } },
+  { id: 'compareFiles', label: 'Compare two files', keys: ['Ctrl+Alt+D'], run: () => { const ps = sel(); if (ps.length === 2) compareFiles(ps[0], ps[1]); else toast('Select exactly two files to compare'); } },
+  { id: 'selectPattern', label: 'Select by pattern…', keys: ['+', 'Shift++'], run: ({ pane }) => selectByPattern(pane, true) },
+  { id: 'deselectPattern', label: 'Deselect by pattern…', keys: ['-'], run: ({ pane }) => selectByPattern(pane, false) },
   ...[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => ({ id: `fav${n}`, label: `Go to favourite ${n}`, keys: [`Ctrl+Alt+${n}`], run: ({ pane }) => {
     const favs = state.favGroups.flatMap((g) => g.items);
     if (favs[n - 1]) navigate(pane, tabOf(pane), favs[n - 1].path);

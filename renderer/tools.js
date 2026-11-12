@@ -1158,3 +1158,114 @@ function cacheThumbs(pane) {
     });
   }
 }
+
+/* =========================================================
+ * Viewer (F3), editor (F4), two-file compare, select by pattern
+ * ======================================================= */
+const VIEW_MAX = 1 << 20; // viewer, editor and compare read at most 1 MB
+const looksBinary = (bytes) => bytes.subarray(0, 8192).includes(0);
+function hexDump(bytes) {
+  let out = '';
+  for (let o = 0; o < bytes.length; o += 16) {
+    const row = [...bytes.subarray(o, o + 16)];
+    const hex = row.map((b) => b.toString(16).padStart(2, '0')).join(' ').padEnd(47, ' ');
+    const asc = row.map((b) => (b >= 32 && b < 127 ? String.fromCharCode(b) : '.')).join('');
+    out += `${o.toString(16).padStart(8, '0')}  ${hex}  ${asc}\n`;
+  }
+  return out;
+}
+// Shows a file as text or hex. Read-only.
+async function viewFile(p) {
+  const r = await api.readBytes(p, VIEW_MAX);
+  if (!r.ok) { toast(`Can’t open ${P.basename(p)} — ${r.error}`, 'error'); return; }
+  const text = new TextDecoder('utf-8').decode(r.bytes);
+  const note = r.size > VIEW_MAX ? `Showing the first ${fmtSize(VIEW_MAX)} of ${fmtSize(r.size)}` : '';
+  await dialog({
+    title: `View “${P.basename(p)}”`,
+    cls: 'wide',
+    html: `<div class="viewer-bar"><button class="btn" data-mode="text">Text</button><button class="btn" data-mode="hex">Hex</button><span class="br-sp"></span><span class="viewer-note">${esc(note)}</span></div>
+      <pre class="viewer"></pre>
+      <div class="m-actions"><button class="btn primary" data-cancel>Close</button></div>`,
+    setup: (root) => {
+      const pre = $('.viewer', root);
+      const show = (mode) => { pre.textContent = mode === 'hex' ? hexDump(r.bytes) : text; };
+      root.addEventListener('click', (e) => { const b = e.target.closest('[data-mode]'); if (b) show(b.dataset.mode); });
+      show(looksBinary(r.bytes) ? 'hex' : 'text');
+    },
+  });
+}
+// Edits a text file in place. Ctrl+S saves; Escape discards.
+async function editFile(p) {
+  const r = await api.readBytes(p, VIEW_MAX);
+  if (!r.ok) { toast(`Can’t open ${P.basename(p)} — ${r.error}`, 'error'); return; }
+  if (r.size > VIEW_MAX) { toast(`${P.basename(p)} is too large to edit here (over 1 MB)`, 'error'); return; }
+  if (looksBinary(r.bytes)) { toast(`${P.basename(p)} looks like a binary file — use View instead`, 'error'); return; }
+  const saved = await dialog({
+    title: `Edit “${P.basename(p)}”`,
+    cls: 'wide',
+    html: `<textarea class="editor" spellcheck="false"></textarea>
+      <div class="m-actions"><span class="br-sp"></span><button class="btn" data-cancel>Cancel</button><button class="btn primary" data-submit>Save</button></div>`,
+    setup: (root) => {
+      const ed = $('.editor', root);
+      ed.value = new TextDecoder('utf-8').decode(r.bytes);
+      ed.focus();
+      ed.addEventListener('keydown', (e) => { if (e.ctrlKey && e.key.toLowerCase() === 's') { e.preventDefault(); root.querySelector('[data-submit]').click(); } });
+    },
+    submit: async (root) => {
+      const w = await api.saveText(p, $('.editor', root).value);
+      if (!w.ok) { toast(`Couldn’t save ${P.basename(p)} — ${w.error}`, 'error', { timeout: 8000 }); return undefined; }
+      return true;
+    },
+  });
+  if (saved) { toast(`Saved ${P.basename(p)}`, 'success'); refreshDirs([P.dirname(p)]); }
+}
+// Line-by-line diff from a longest-common-subsequence table. Returns [marker, text] pairs.
+function lineDiff(A, B) {
+  const n = A.length, m = B.length;
+  const L = Array.from({ length: n + 1 }, () => new Uint32Array(m + 1));
+  for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--) L[i][j] = A[i] === B[j] ? L[i + 1][j + 1] + 1 : Math.max(L[i + 1][j], L[i][j + 1]);
+  const out = [];
+  let i = 0, j = 0;
+  while (i < n && j < m) {
+    if (A[i] === B[j]) { out.push([' ', A[i++]]); j++; }
+    else if (L[i + 1][j] >= L[i][j + 1]) out.push(['-', A[i++]]);
+    else out.push(['+', B[j++]]);
+  }
+  while (i < n) out.push(['-', A[i++]]);
+  while (j < m) out.push(['+', B[j++]]);
+  return out;
+}
+async function compareFiles(a, b) {
+  const [ra, rb] = await Promise.all([api.readBytes(a, VIEW_MAX), api.readBytes(b, VIEW_MAX)]);
+  const bad = [ra, rb].find((r) => !r.ok);
+  if (bad) { toast(`Can’t compare — ${bad.error}`, 'error'); return; }
+  if (ra.size > VIEW_MAX || rb.size > VIEW_MAX || looksBinary(ra.bytes) || looksBinary(rb.bytes)) { toast('Compare works on text files up to 1 MB', 'error'); return; }
+  const A = new TextDecoder('utf-8').decode(ra.bytes).split('\n');
+  const B = new TextDecoder('utf-8').decode(rb.bytes).split('\n');
+  if (A.length * B.length > 4e6) { toast('These files are too long to compare here', 'error'); return; }
+  const rows = lineDiff(A, B).map(([mark, s]) => `<div class="diff-row diff-${mark === '+' ? 'add' : mark === '-' ? 'del' : 'same'}"><span class="diff-mark">${mark === ' ' ? '' : mark}</span>${esc(s) || '&nbsp;'}</div>`).join('');
+  await dialog({
+    title: `${P.basename(a)}  ↔  ${P.basename(b)}`,
+    cls: 'wide',
+    html: `<div class="diff">${rows}</div><div class="m-actions"><button class="btn primary" data-cancel>Close</button></div>`,
+  });
+}
+// Selects (or deselects) the visible items whose names match a wildcard like *.jpg.
+function wildcardRe(glob) {
+  return new RegExp(`^${glob.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.')}$`, 'i');
+}
+async function selectByPattern(pane, add) {
+  const glob = await dialog({
+    title: add ? 'Select by pattern' : 'Deselect by pattern',
+    html: `<div class="cz-grid"><label>Pattern</label><input data-k="glob" spellcheck="false" value="*"></div>
+      <p>Use * and ? as wildcards, for example *.jpg</p>
+      <div class="m-actions"><button class="btn" data-cancel>Cancel</button><button class="btn primary" data-submit>${add ? 'Select' : 'Deselect'}</button></div>`,
+    setup: (root) => { const i = $('[data-k="glob"]', root); i.focus(); i.select(); },
+    submit: (root) => $('[data-k="glob"]', root).value.trim() || undefined,
+  });
+  if (!glob) return;
+  const { tab, col } = activeCtx(pane);
+  const re = wildcardRe(glob);
+  for (const e of visible(tab, col)) if (re.test(e.name)) { if (add) col.sel.add(e.path); else col.sel.delete(e.path); }
+  renderPane(pane);
+}

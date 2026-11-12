@@ -84,6 +84,8 @@ contextBridge.exposeInMainWorld('api', {
     onChanged: (fn) => ipcRenderer.on('cloud:changed', () => fn()),
   },
   writeNew: (dir, name, bytes) => invoke('fs:writeNew', dir, name, bytes),
+  readBytes: (p, max) => invoke('fs:readBytes', p, max),
+  saveText: (p, text) => invoke('fs:saveText', p, text),
   mediaMeta: (paths) => invoke('fs:mediaMeta', paths),
   probe: (p) => invoke('fs:probe', p),
   iconThemes: () => invoke('icons:themes'),
