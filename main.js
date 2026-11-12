@@ -242,6 +242,24 @@ function dropTags(p) {
   return hit;
 }
 
+// User themes: JSON files in <userData>/themes, e.g. {"name": "Solar", "base": "nord", "vars": {"--accent": "#f5a623"}}.
+// "base" picks the built-in theme underneath; "vars" override its CSS variables. Bad files are skipped.
+const THEME_BASES = ['black', 'nord', 'midnight', 'light'];
+ipcMain.handle('themes:user', async () => {
+  const dir = path.join(app.getPath('userData'), 'themes');
+  let files = [];
+  try { files = await fsp.readdir(dir); } catch { return []; }
+  const out = [];
+  for (const f of files.filter((n) => n.endsWith('.json')).sort()) {
+    try {
+      const t = JSON.parse(await fsp.readFile(path.join(dir, f), 'utf8'));
+      if (typeof t.name !== 'string' || !t.name || !t.vars || typeof t.vars !== 'object') continue;
+      const vars = Object.fromEntries(Object.entries(t.vars).filter(([k, v]) => /^--[\w-]+$/.test(k) && /^[#\w\s.,()%+-]{1,80}$/.test(String(v))));
+      out.push({ name: t.name.slice(0, 40), base: THEME_BASES.includes(t.base) ? t.base : 'black', vars });
+    } catch { /* not valid JSON: skip */ }
+  }
+  return out;
+});
 ipcMain.handle('tags:get', () => tags);
 ipcMain.handle('tags:set', (_, paths, color) => {
   for (const p of paths) { if (color) tags[p] = color; else delete tags[p]; }

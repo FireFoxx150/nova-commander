@@ -1845,10 +1845,16 @@ function toggleInfo() {
   updatePreview(true);
   saveState();
 }
+let userThemeVars = []; // CSS variables set by the current user theme, cleared when switching
 function setTheme(i) {
   state.theme = ((i % THEMES.length) + THEMES.length) % THEMES.length;
-  document.documentElement.dataset.theme = THEMES[state.theme][0];
-  $('#btn-theme').title = `Theme: ${THEMES[state.theme][1]} (click to change)`;
+  const [id, name, vars = {}] = THEMES[state.theme];
+  const root = document.documentElement;
+  for (const k of userThemeVars) root.style.removeProperty(k);
+  userThemeVars = Object.keys(vars);
+  for (const k of userThemeVars) root.style.setProperty(k, vars[k]);
+  root.dataset.theme = id;
+  $('#btn-theme').title = `Theme: ${name} (click to change)`;
   saveState();
 }
 function syncToggles() {
@@ -3909,6 +3915,7 @@ async function init() {
     }
   }
   applySettings();
+  for (const t of await api.userThemes()) THEMES.push([t.base, t.name, t.vars]);
   setTheme(saved?.theme ?? 0);
   syncToggles();
   updateUndoBtn();

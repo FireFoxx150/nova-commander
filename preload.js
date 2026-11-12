@@ -75,6 +75,7 @@ contextBridge.exposeInMainWorld('api', {
   videoThumb: (p) => invoke('thumb:video', p),
   pickImage: () => invoke('dialog:pickImage'),
   pickFiles: () => invoke('dialog:pickFiles'),
+  userThemes: () => invoke('themes:user'),
   cloud: {
     status: () => invoke('cloud:status'),
     mount: (name, opts) => invoke('cloud:mount', name, opts),
