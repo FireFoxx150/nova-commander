@@ -56,6 +56,7 @@ contextBridge.exposeInMainWorld('api', {
   setHotkey: (accel) => invoke('app:hotkey', accel),
   defaultFM: (set) => invoke('sys:defaultFM', set),
   scripts: () => invoke('scripts:list'),
+  plugins: () => invoke('plugins:list'),
   runScript: (opts) => invoke('scripts:run', opts),
   runProgram: (file, args, admin) => invoke('sys:run', file, args, admin),
   splitArgs: (line) => invoke('sys:splitArgs', line),

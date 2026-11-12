@@ -24,6 +24,7 @@ async function loadScripts() {
   const r = await api.scripts();
   state.scripts = r.items;
   state.scriptsDir = r.dir;
+  state.plugins = await api.plugins();
 }
 
 /* =========================================================
@@ -814,6 +815,9 @@ function setFolderBg(dir, img) {
  * ======================================================= */
 function scriptItems(paths, dir) {
   const items = state.scripts.map((sc) => ({ label: `Script: ${P.basename(sc)}`, icon: 'script', act: () => runScript(sc, paths, dir) }));
+  // A plugin appears when every selected name matches one of its wildcards.
+  const fits = (pl) => paths.length && paths.every((p) => pl.match.some((g) => wildcardRe(g).test(P.basename(p))));
+  for (const pl of (state.plugins || []).filter(fits)) items.push({ label: `Plugin: ${pl.name}`, icon: 'script', act: () => runScript(pl.script, paths, dir) });
   items.push({ label: state.scripts.length ? 'Open scripts folder' : 'Add scripts…', icon: 'script', act: () => navigate(activePane(), tabOf(activePane()), state.scriptsDir) });
   return items;
 }

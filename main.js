@@ -1520,8 +1520,31 @@ ipcMain.handle('scripts:list', async () => {
   }
   return { dir, items };
 });
+// Plugins: each folder in <userData>/plugins has a plugin.json {"name", "run", "match"}. "run" is an executable
+// in that same folder; "match" lists wildcards (default "*") for the file names it applies to.
+const pluginsDir = () => path.join(app.getPath('userData'), 'plugins');
+async function loadPlugins() {
+  const out = [];
+  let names = [];
+  try { names = await fsp.readdir(pluginsDir()); } catch { return out; }
+  for (const n of names.sort((a, b) => a.localeCompare(b))) {
+    const dir = path.join(pluginsDir(), n);
+    try {
+      const m = JSON.parse(await fsp.readFile(path.join(dir, 'plugin.json'), 'utf8'));
+      if (typeof m.name !== 'string' || typeof m.run !== 'string') continue;
+      const script = path.resolve(dir, m.run);
+      if (path.dirname(script) !== dir) continue; // the script must sit in the plugin's own folder
+      await fsp.access(script, fs.constants.X_OK);
+      const match = Array.isArray(m.match) ? m.match.filter((g) => typeof g === 'string') : [];
+      out.push({ name: m.name.slice(0, 60), script, match: match.length ? match : ['*'] });
+    } catch { /* missing or broken manifest: skip */ }
+  }
+  return out;
+}
+ipcMain.handle('plugins:list', () => loadPlugins());
 ipcMain.handle('scripts:run', async (_, { id, script, paths, cwd, otherDir }) => {
-  if (path.dirname(path.resolve(script)) !== scriptsDir()) return { ok: false, code: -1, output: 'Only scripts in the scripts folder can be run' };
+  const target = path.resolve(script);
+  if (path.dirname(target) !== scriptsDir() && !(await loadPlugins()).some((p) => p.script === target)) return { ok: false, code: -1, output: 'Only scripts in the scripts folder or a plugin can be run' };
   const r = await new Promise((resolve) => {
     let out = '';
     let child;
