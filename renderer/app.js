@@ -897,7 +897,8 @@ function listRowHtml(e, col, focused, cols) {
   const ext = e.isDir ? '' : extOf(e.name);
   const base = ext ? esc(e.name.slice(0, -(ext.length + 1))) : esc(e.name);
   const name = ext && S().showExtensions ? `${base}<span class="r-ext">.${esc(e.name.slice(-ext.length))}</span>` : base;
-  return `<div ${rowAttrs(e, col, focused)}>${rowIcon(e)}<span class="r-name">${name}</span>${gitBadge(e)}`
+  // The git badge goes inside the name cell: as its own grid cell it pushes the size column onto the next row.
+  return `<div ${rowAttrs(e, col, focused)}>${rowIcon(e)}<span class="r-name">${name}${gitBadge(e)}</span>`
     + cols.map((c) => `<span class="${c.cls}${c.id === 'size' && e.isDir && !dirSizes.has(e.path) ? ' pending' : ''}"${c.id === 'size' ? ` style="--bar:${Math.min(100, Math.max(0, (sizeOf(e) / listMaxSize) * 100)).toFixed(1)}%"` : ''}>${c.cell(e)}</span>`).join('') + '</div>';
 }
 
