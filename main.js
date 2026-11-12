@@ -1532,7 +1532,7 @@ ipcMain.handle('sys:run', (_, file, args, admin) => new Promise((resolve) => {
 // Split a command line into arguments, honouring "double" and 'single' quotes.
 ipcMain.handle('sys:splitArgs', (_, line) => {
   const out = [];
-  const re = /"((?:\\.|[^"])*)"|'([^']*)'|(\S+)/g;
+  const re = /"((?:\\.|[^"\\])*)"|'([^']*)'|(\S+)/g;
   let m;
   while ((m = re.exec(line))) out.push(m[1] != null ? m[1].replace(/\\(.)/g, '$1') : m[2] != null ? m[2] : m[3]);
   return out;
@@ -1661,6 +1661,15 @@ function decodeBody(body, h) {
   else buf = Buffer.from(body, 'latin1');
   try { return new TextDecoder(cs).decode(buf); } catch { return buf.toString('utf8'); }
 }
+// Plain text from an HTML body. Tags are stripped until none are left, and entities are decoded in one pass.
+function htmlToText(html) {
+  const strip = (s, re) => { let prev; do { prev = s; s = s.replace(re, ''); } while (s !== prev); return s; };
+  const ENT = { nbsp: ' ', amp: '&', lt: '<', gt: '>' };
+  let s = strip(html, /<(style|script)[\s\S]*?<\/\1\s*>/gi);
+  s = s.replace(/<br\s*\/?>|<\/p>/gi, '\n');
+  s = strip(s, /<[^>]*>/g);
+  return s.replace(/&(nbsp|amp|lt|gt);/g, (_, n) => ENT[n]);
+}
 function mailText(raw) {
   const sep = raw.search(/\r?\n\r?\n/);
   const h = parseHeaders(sep < 0 ? raw : raw.slice(0, sep));
@@ -1678,7 +1687,7 @@ function mailText(raw) {
     return { h, type: 'text/plain', text: html || '' };
   }
   let text = decodeBody(body, h);
-  if (type.startsWith('text/html')) text = text.replace(/<(style|script)[\s\S]*?<\/\1>/gi, '').replace(/<br\s*\/?>|<\/p>/gi, '\n').replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+  if (type.startsWith('text/html')) text = htmlToText(text);
   return { h, type: type.startsWith('text/html') ? 'text/html' : 'text/plain', text };
 }
 // Outlook .msg: an OLE compound file. Read its directory, then the MAPI property streams
@@ -1753,7 +1762,7 @@ function msgText(p) {
   let text = prop('1000');
   if (!text) {
     const html = cf.get('__substg1.0_10130102');
-    if (html) text = html.toString('utf8').replace(/<(style|script)[\s\S]*?<\/\1>/gi, '').replace(/<br\s*\/?>|<\/p>/gi, '\n').replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&');
+    if (html) text = htmlToText(html.toString('utf8'));
   }
   const from = prop('0C1A') || prop('0042');
   const addr = prop('0C1F') || prop('0065');
