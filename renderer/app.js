@@ -29,10 +29,12 @@ const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'bas
 
 function fmtSize(n) {
   if (n == null) return '';
-  if (n < 1024) return `${n} B`;
-  const u = ['KB', 'MB', 'GB', 'TB', 'PB'];
+  if (S().sizeUnits === 'bytes') return `${n.toLocaleString()} B`;
+  const base = S().sizeUnits === 'decimal' ? 1000 : 1024;
+  if (n < base) return `${n} B`;
+  const u = S().sizeUnits === 'decimal' ? ['kB', 'MB', 'GB', 'TB', 'PB'] : ['KB', 'MB', 'GB', 'TB', 'PB'];
   let i = -1;
-  do { n /= 1024; i++; } while (n >= 1024 && i < u.length - 1);
+  do { n /= base; i++; } while (n >= base && i < u.length - 1);
   return `${n < 10 ? n.toFixed(2) : n < 100 ? n.toFixed(1) : Math.round(n)} ${u[i]}`;
 }
 const pad = (n) => String(n).padStart(2, '0');
@@ -103,6 +105,11 @@ const DEFAULT_SETTINGS = {
   termShell: '', // shell for the terminal panel; '' = your login shell
   savedFilters: [], // named folder filters, {name, text}
   barHidden: [], // bottom-bar buttons hidden by the user
+  sizeUnits: 'binary', // binary = KB of 1024 bytes, decimal = kB of 1000, bytes = exact
+  defaultView: 'details', // view for newly opened folders
+  previewTextKB: 64, // how much of a text file the preview panel reads
+  thumbSkip: '', // extensions that never get a thumbnail, comma-separated
+  fontFamily: '', // overrides the interface font; '' = built-in font
   toolbar: [], // command ids shown as buttons in the bottom bar
   showTree: true, // folder tree in the sidebar
   cloudCacheGB: 10, // local cache per cloud account, in GB
@@ -152,7 +159,7 @@ let jobSeq = 0;
 const tagOf = (p) => state.tags[p] || 0;
 const S = () => state.settings;
 
-function newTab(path, view = 'details', sort) {
+function newTab(path, view = S().defaultView, sort) {
   return { id: ++uid, path, view, columns: [], focusCol: 0, history: [path], hIndex: 0, filter: '', typeFilter: '', sort: sort || { key: 'name', dir: 1 }, token: 0, loaded: false, alias: '', aliasPath: '', lastUsed: Date.now() };
 }
 const tabLabel = (t) => (t.alias && (S().keepTabAlias || t.path === t.aliasPath) ? t.alias : dirLabel(t.path));
@@ -910,8 +917,9 @@ function gridTileHtml(e, col, focused) {
   // Big images get their src from the thumbnail cache (cacheThumbs) instead of the full file.
   const cached = S().thumbCache && e.size > 150 * 1024;
   // Videos start as their file icon; loadVideoThumbs swaps in a real frame once it's extracted.
-  const isVideo = !e.isDir && !e.broken && VIDEO_THUMB_EXT.has(extOf(e.name));
-  const thumb = !e.isDir && !e.broken && THUMB_EXT.has(extOf(e.name))
+  const skipThumb = S().thumbSkip.split(',').map((x) => x.trim().replace(/^\./, '').toLowerCase()).filter(Boolean).includes(extOf(e.name).toLowerCase());
+  const isVideo = !e.isDir && !e.broken && !skipThumb && VIDEO_THUMB_EXT.has(extOf(e.name));
+  const thumb = !e.isDir && !e.broken && !skipThumb && THUMB_EXT.has(extOf(e.name))
     ? `<img loading="lazy" decoding="async" ${cached ? 'data-full' : 'src'}="${esc(fileUri(e.path))}" alt="" draggable="false">`
     : isVideo ? `<span class="v-frame" data-video="${esc(e.path)}">${iconFor(e, { big: true })}</span>`
     : iconFor(e, { big: true, special: place && place.id !== 'trash' ? place.id : null });
@@ -3585,6 +3593,7 @@ function bindSearch(pane) {
 const BAR_BUTTONS = [['btn-settings', 'Settings'], ['btn-theme', 'Theme'], ['btn-hidden', 'Show hidden files'], ['btn-dual', 'Dual pane'], ['btn-preview', 'Preview panel'], ['btn-term', 'Terminal'], ['btn-undo', 'Undo'], ['btn-ops', 'File operations']];
 function applySettings() {
   for (const [id] of BAR_BUTTONS) $(`#${id}`).hidden = S().barHidden.includes(id);
+  if (S().fontFamily) document.documentElement.style.setProperty('--font', S().fontFamily); else document.documentElement.style.removeProperty('--font');
   renderToolbar();
   const root = document.documentElement.style;
   root.setProperty('--row-h', `${S().rowHeight}px`);
@@ -3616,6 +3625,11 @@ function openSettings() {
   const chk = (k, label, hint = '') => `<label class="st-row"><input type="checkbox" data-set="${k}" ${s[k] ? 'checked' : ''}><span>${label}${hint ? `<small>${hint}</small>` : ''}</span></label>`;
   const opt = (k, v, label) => `<option value="${v}" ${String(s[k]) === String(v) ? 'selected' : ''}>${label}</option>`;
   const general = `
+    <label class="st-field"><span>Size units</span><select data-set="sizeUnits">${opt('sizeUnits', 'binary', 'KB = 1024 bytes')}${opt('sizeUnits', 'decimal', 'kB = 1000 bytes')}${opt('sizeUnits', 'bytes', 'Exact bytes')}</select></label>
+    <label class="st-field"><span>Default view</span><select data-set="defaultView">${opt('defaultView', 'details', 'Details')}${opt('defaultView', 'grid', 'Thumbnails')}${opt('defaultView', 'columns', 'Columns')}</select></label>
+    <label class="st-field"><span>Text preview</span><input type="number" min="1" max="1024" data-set="previewTextKB" value="${s.previewTextKB}"><span>KB</span></label>
+    <label class="st-field"><span>No thumbnails for</span><input data-set="thumbSkip" spellcheck="false" placeholder="e.g. gif, svg" value="${esc(s.thumbSkip)}"></label>
+    <label class="st-field"><span>Font</span><input data-set="fontFamily" spellcheck="false" placeholder="Built-in font" value="${esc(s.fontFamily)}"></label>
     ${chk('foldersFirst', 'Keep folders above files')}
     ${chk('showExtensions', 'Show file extensions in names', 'The Ext column always shows them')}
     ${chk('confirmTrash', 'Ask before moving items to the Trash')}

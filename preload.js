@@ -31,7 +31,7 @@ contextBridge.exposeInMainWorld('api', {
   open: (p) => invoke('fs:open', p),
   reveal: (p) => invoke('fs:reveal', p),
   terminal: (dir) => invoke('fs:terminal', dir),
-  preview: (p) => invoke('fs:preview', p),
+  preview: (p, maxKB) => invoke('fs:preview', p, maxKB),
   places: () => invoke('sys:places'),
   watch: (dirs) => ipcRenderer.send('fs:watch', dirs),
   onChanged: (fn) => ipcRenderer.on('fs:changed', (_, dir) => fn(dir)),

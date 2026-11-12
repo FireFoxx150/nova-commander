@@ -228,7 +228,7 @@ async function quickLookHtml(e) {
     if (!m.ok) return `<div class="ql-wait">${esc(m.error)}</div>`;
     return `<div class="ql-mail"><dl><dt>From</dt><dd>${esc(m.from)}</dd><dt>To</dt><dd>${esc(m.to)}</dd><dt>Date</dt><dd>${esc(m.date)}</dd><dt>Subject</dt><dd><b>${esc(m.subject)}</b></dd></dl><pre>${esc(m.text)}</pre></div>`;
   }
-  const info = await api.preview(e.path);
+  const info = await api.preview(e.path, S().previewTextKB);
   if (!info.ok) return `<div class="ql-wait">${esc(info.error)}</div>`;
   switch (info.kind) {
     case 'image': return `<img class="ql-img" src="${esc(info.url)}" alt="">`;

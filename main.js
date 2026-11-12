@@ -958,7 +958,7 @@ const IMAGE_EXT = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg', 'i
 const VIDEO_EXT = new Set(['mp4', 'webm', 'mov', 'mkv', 'ogv', 'm4v']);
 const AUDIO_EXT = new Set(['mp3', 'wav', 'ogg', 'flac', 'm4a', 'aac', 'opus', 'oga']);
 
-ipcMain.handle('fs:preview', async (_, p) => {
+ipcMain.handle('fs:preview', async (_, p, maxKB) => {
   try {
     const st = await fsp.stat(p);
     const base = { ok: true, size: st.size, mtime: st.mtimeMs, ctime: st.birthtimeMs || st.ctimeMs, mode: (st.mode & 0o777).toString(8) };
@@ -980,7 +980,7 @@ ipcMain.handle('fs:preview', async (_, p) => {
     if (st.size <= 4 * 1024 * 1024) {
       const fh = await fsp.open(p, 'r');
       try {
-        const buf = Buffer.alloc(Math.min(st.size, 64 * 1024));
+        const buf = Buffer.alloc(Math.min(st.size, (+maxKB || 64) * 1024));
         const { bytesRead } = await fh.read(buf, 0, buf.length, 0);
         const slice = buf.subarray(0, bytesRead);
         if (!slice.subarray(0, 8192).includes(0)) {
