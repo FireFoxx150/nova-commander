@@ -103,6 +103,8 @@ const DEFAULT_SETTINGS = {
   termShell: '', // shell for the terminal panel; '' = your login shell
   savedFilters: [], // named folder filters, {name, text}
   barHidden: [], // bottom-bar buttons hidden by the user
+  toolbar: [], // command ids shown as buttons in the bottom bar
+  showTree: true, // folder tree in the sidebar
   cloudCacheGB: 10, // local cache per cloud account, in GB
   cloudReadOnly: false, // mount cloud accounts read-only
   keepInTray: false,
@@ -1106,6 +1108,7 @@ function renderSidebar() {
     places += `<div class="sb-item" data-nav="${esc(p.path)}" data-drop="${esc(drop)}" title="${esc(p.path)}">${icon}<span class="si-name">${esc(p.name)}</span></div>`;
   }
   html += sbSection('places', state.user, places);
+  if (S().showTree) { ensureTree(HOME); html += sbSection('folders', 'Folders', treeHtml(HOME) || '<div class="sb-empty">No folders</div>'); }
   state.favGroups.forEach((g, gi) => {
     let body = g.items.length ? '' : `<div class="sb-empty">Drop folders here or press +</div>`;
     g.items.forEach((f, ii) => {
@@ -2354,7 +2357,7 @@ const sel = () => selectedPaths();
 const ACTIONS = [
   { id: 'terminal', label: 'Show or hide the terminal panel', keys: ['Ctrl+`'], run: () => toggleTerminal() },
   { id: 'comparePanes', label: 'Compare with other pane', keys: ['Ctrl+Alt+M'], run: () => toggleCompare() },
-  { id: 'view', label: 'View file', keys: ['F3'], run: () => { const ps = sel(); if (ps.length === 1) viewFile(ps[0]); else toast('Select one file to view'); } },
+  { id: 'view', label: 'View file', keys: ['F3', 'Ctrl+Q'], run: () => { const ps = sel(); if (ps.length === 1) viewFile(ps[0]); else toast('Select one file to view'); } },
   { id: 'edit', label: 'Edit file', keys: ['F4'], run: () => { const ps = sel(); if (ps.length === 1) editFile(ps[0]); else toast('Select one file to edit'); } },
   { id: 'compareFiles', label: 'Compare two files', keys: ['Ctrl+Alt+D'], run: () => { const ps = sel(); if (ps.length === 2) compareFiles(ps[0], ps[1]); else toast('Select exactly two files to compare'); } },
   { id: 'selectPattern', label: 'Select by pattern…', keys: ['+', 'Shift++'], run: ({ pane }) => selectByPattern(pane, true) },
@@ -3581,6 +3584,7 @@ function bindSearch(pane) {
 const BAR_BUTTONS = [['btn-settings', 'Settings'], ['btn-theme', 'Theme'], ['btn-hidden', 'Show hidden files'], ['btn-dual', 'Dual pane'], ['btn-preview', 'Preview panel'], ['btn-term', 'Terminal'], ['btn-undo', 'Undo'], ['btn-ops', 'File operations']];
 function applySettings() {
   for (const [id] of BAR_BUTTONS) $(`#${id}`).hidden = S().barHidden.includes(id);
+  renderToolbar();
   const root = document.documentElement.style;
   root.setProperty('--row-h', `${S().rowHeight}px`);
   root.setProperty('--fs', `${S().fontSize}px`);
@@ -3621,9 +3625,13 @@ function openSettings() {
     <label class="st-field wide"><span>Also treat as hidden</span><input data-set="hiddenPatterns" spellcheck="false" placeholder="e.g. *.tmp, __pycache__, desktop.ini" value="${esc(s.hiddenPatterns)}"></label>
     ${chk('markRecent', 'Highlight files changed in the last hour')}
     ${chk('showDrives', 'Show the Drives section in the sidebar')}
+    ${chk('showTree', 'Show the Folders tree in the sidebar')}
     ${chk('thumbCache', 'Cache thumbnails of large images', 'Makes thumbnail view faster the next time')}
     <h4 class="st-h">Bottom bar</h4>
     ${BAR_BUTTONS.map(([id, label]) => `<label class="st-row"><input type="checkbox" data-set="barHidden" data-value="${id}" ${s.barHidden.includes(id) ? '' : 'checked'}><span>${label}</span></label>`).join('')}
+    <h4 class="st-h">Toolbar</h4>
+    <p class="st-note">Commands shown as buttons at the bottom of the sidebar.</p>
+    <div class="tool-list">${ACTIONS.map((a) => `<label class="st-row"><input type="checkbox" data-set="toolbar" data-value="${a.id}" ${s.toolbar.includes(a.id) ? 'checked' : ''}><span>${esc(a.label)}</span></label>`).join('')}</div>
     <h4 class="st-h">Terminal</h4>
     <label class="st-field"><span>Shell</span><input data-set="termShell" spellcheck="false" placeholder="Your login shell, e.g. /usr/bin/fish" value="${esc(s.termShell)}"></label>
     <h4 class="st-h">Cloud</h4>
@@ -3746,6 +3754,7 @@ function openSettings() {
         if (!el) return;
         const k = el.dataset.set;
         if (k === 'theme') { setTheme(+el.value); if (!s.accent) $('[data-set="accent"]', root).value = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim(); return; }
+        if (k === 'toolbar') { const id = el.dataset.value; s.toolbar = s.toolbar.filter((x) => x !== id).concat(el.checked ? [id] : []); settingsChanged(); return; }
         if (k === 'barHidden') { const id = el.dataset.value; s.barHidden = s.barHidden.filter((x) => x !== id).concat(el.checked ? [] : [id]); settingsChanged(); return; }
         if (el.type === 'checkbox') s[k] = el.checked;
         else if (el.type === 'number' || el.type === 'range' || k === 'rowHeight' || k === 'parentColWidth') s[k] = Number(el.value) || DEFAULT_SETTINGS[k];
@@ -3815,6 +3824,8 @@ function bindChrome() {
     if (rm) { removeFromDropList([rm.dataset.dlRemove]); return; }
     const dli = e.target.closest('[data-dl-item]');
     if (dli) { locate(dli.dataset.dlItem); return; }
+    const treeTg = e.target.closest('[data-tree-toggle]');
+    if (treeTg) { toggleTree(treeTg.dataset.treeToggle); return; }
     const it = e.target.closest('[data-nav]');
     if (!it) return;
     const pane = activePane();

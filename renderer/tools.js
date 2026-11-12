@@ -1289,3 +1289,45 @@ async function saveFilter(text) {
   saveState();
   toast(`Saved filter “${name}”`, 'success');
 }
+
+/* =========================================================
+ * Bottom-bar commands and the Folders tree
+ * ======================================================= */
+// Buttons for the commands the user picked in Settings → Toolbar. Each runs the command for the active pane.
+function renderToolbar() {
+  const box = $('#sb-tools');
+  if (!box) return;
+  box.innerHTML = S().toolbar.map((id) => ACTIONS.find((a) => a.id === id)).filter(Boolean)
+    .map((a) => `<button class="sb-btn tool" data-tool="${esc(a.id)}" title="${esc(a.label)}">${esc(a.label)}</button>`).join('');
+  box.onclick = (e) => {
+    const b = e.target.closest('[data-tool]');
+    if (!b) return;
+    const a = ACTIONS.find((x) => x.id === b.dataset.tool);
+    const { pane, tab, col } = activeCtx();
+    a.run({ pane, tab, col });
+  };
+}
+// Folder tree: each folder's sub-folders are loaded the first time it is opened.
+const treeCache = new Map(); // dir -> sub-folders, sorted
+const treeOpen = new Set(); // expanded dirs
+async function ensureTree(dir) {
+  if (treeCache.has(dir)) return;
+  treeCache.set(dir, []); // placeholder so repeated renders don't load twice
+  const r = await api.list(dir);
+  treeCache.set(dir, r.ok ? r.entries.filter((e) => e.isDir && !e.name.startsWith('.')).sort((a, b) => a.name.localeCompare(b.name)) : []);
+  renderSidebar();
+}
+async function toggleTree(dir) {
+  if (treeOpen.has(dir)) treeOpen.delete(dir);
+  else { treeOpen.add(dir); await ensureTree(dir); }
+  renderSidebar();
+}
+function treeHtml(dir, depth = 0) {
+  let h = '';
+  for (const d of treeCache.get(dir) || []) {
+    const open = treeOpen.has(d.path);
+    h += `<div class="sb-item tree-item" style="padding-left:${8 + depth * 14}px" data-nav="${esc(d.path)}" data-drop="${esc(d.path)}" title="${esc(d.path)}"><span class="tree-x" data-tree-toggle="${esc(d.path)}">${open ? '▾' : '▸'}</span><span class="si-name">${esc(d.name)}</span></div>`;
+    if (open) h += treeHtml(d.path, depth + 1);
+  }
+  return h;
+}
