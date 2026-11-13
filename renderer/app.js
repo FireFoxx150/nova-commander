@@ -3929,7 +3929,7 @@ function bindChrome() {
     const path = img.closest('[data-path]')?.dataset.path || '';
     img.outerHTML = iconFor({ name: P.basename(path), isDir: false }, { big: true });
   }, true);
-  window.addEventListener('focus', () => { loadPlaces(); refreshCloud(); });
+  window.addEventListener('focus', () => { loadPlaces(); refreshCloud(); refreshTree(); });
   api.cloud.onChanged(() => refreshCloud());
   // Keep the age badges current.
   setInterval(() => { for (const p of visiblePanes()) if (!p.renaming && !drag) renderBody(p); }, 60000);

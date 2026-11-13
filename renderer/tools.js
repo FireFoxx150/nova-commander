@@ -1310,11 +1310,19 @@ function renderToolbar() {
 // Folder tree: each folder's sub-folders are loaded the first time it is opened.
 const treeCache = new Map(); // dir -> sub-folders, sorted
 const treeOpen = new Set(); // expanded dirs
+async function loadTree(dir) {
+  const r = await api.list(dir);
+  treeCache.set(dir, r.ok ? r.entries.filter((e) => e.isDir && !e.name.startsWith('.')).sort((a, b) => a.name.localeCompare(b.name)) : []);
+}
 async function ensureTree(dir) {
   if (treeCache.has(dir)) return;
   treeCache.set(dir, []); // placeholder so repeated renders don't load twice
-  const r = await api.list(dir);
-  treeCache.set(dir, r.ok ? r.entries.filter((e) => e.isDir && !e.name.startsWith('.')).sort((a, b) => a.name.localeCompare(b.name)) : []);
+  await loadTree(dir);
+  renderSidebar();
+}
+// Reloads the home folder and every expanded folder, so new or removed folders show up.
+async function refreshTree() {
+  await Promise.all([HOME, ...treeOpen].map(loadTree));
   renderSidebar();
 }
 async function toggleTree(dir) {
