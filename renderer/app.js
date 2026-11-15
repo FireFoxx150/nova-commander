@@ -119,7 +119,7 @@ const DEFAULT_SETTINGS = {
   columns: { ext: true, age: true, mtime: true, ctime: false, size: true, dims: false, taken: false, duration: false, tag: false },
 };
 // Shared between windows (stored in window 1's record); everything else is per window.
-const SHARED_KEYS = ['settings', 'favGroups', 'recent', 'dropList', 'savedWindows', 'notes', 'folderBg', 'folderIcons', 'typeIcons', 'todos', 'recentDest', 'collapsed', 'rules', 'theme', 'showHidden', 'compare'];
+const SHARED_KEYS = ['settings', 'favGroups', 'recent', 'dropList', 'savedWindows', 'tabSets', 'notes', 'folderBg', 'folderIcons', 'typeIcons', 'todos', 'recentDest', 'collapsed', 'rules', 'theme', 'showHidden', 'compare'];
 const QUERY = new URLSearchParams(location.search);
 const MAIN_WIN = (QUERY.get('w') || '1') === '1';
 
@@ -135,6 +135,7 @@ const state = {
   recent: [], // recently visited folders, newest first
   dropList: [], // paths collected on the Drop List shelf
   savedWindows: [], // { name, dual, split, panes }
+  tabSets: [], // { name, panes } tabs of both panes, opened into the current window
   notes: {}, // folder path -> note text
   folderBg: {}, // folder path -> background image path
   folderIcons: {}, // folder path -> custom icon image
@@ -2306,6 +2307,7 @@ function paneMenu(x, y, pane) {
     { label: 'New window', icon: 'window', key: kb('newWindow'), act: () => api.newWindow({ path: dir }) },
     { label: 'Saved windows…', icon: 'window', act: savedWindowsDialog },
     { label: 'Save this window…', icon: 'window', act: saveWindowLayout },
+    { label: 'Tab sets…', icon: 'tab', act: tabSetsDialog },
     '-',
     ...views.map(([v, label, id]) => ({ label: `${label}${tab.view === v ? '  ●' : ''}`, icon: v === 'grid' ? 'grid' : v, key: kb(id), act: () => setView(pane, v) })),
     { label: state.showHidden ? 'Hide hidden files' : 'Show hidden files', icon: 'eye', key: kb('toggleHidden'), act: toggleHidden },
@@ -3960,7 +3962,7 @@ async function init() {
       const layout = (saved.savedWindows || []).find((w) => w.name === QUERY.get('saved'));
       Object.assign(saved, { dual: true, info: false, split: 0.5, active: 0, panes: null }, layout || {});
     }
-    for (const k of ['savedWindows', 'notes', 'folderBg', 'folderIcons', 'typeIcons', 'todos', 'recentDest', 'collapsed', 'rules']) if (saved[k]) state[k] = saved[k];
+    for (const k of ['savedWindows', 'tabSets', 'notes', 'folderBg', 'folderIcons', 'typeIcons', 'todos', 'recentDest', 'collapsed', 'rules']) if (saved[k]) state[k] = saved[k];
     syncIcons();
     state.dual = saved.dual ?? true;
     state.info = saved.info ?? true;

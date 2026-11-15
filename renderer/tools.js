@@ -1339,3 +1339,41 @@ function treeHtml(dir, depth = 0) {
   }
   return h;
 }
+
+/* =========================================================
+ * Tab sets: every tab in both panes, saved by name and opened in the current window
+ * ======================================================= */
+// Replaces the tabs of each pane the set covers. Unloaded tabs load when they're selected.
+function openTabSet(set) {
+  set.panes.forEach((sp, i) => {
+    const pane = state.panes[i];
+    if (!pane || !sp.tabs?.length) return;
+    pane.tabs = sp.tabs.map((t) => Object.assign(newTab(t.path, t.view, t.sort), { alias: t.alias || '', aliasPath: t.aliasPath || '' }));
+    pane.activeTab = Math.min(sp.activeTab || 0, pane.tabs.length - 1);
+  });
+  for (const pane of visiblePanes()) activateTab(pane, pane.activeTab);
+  toast(`Opened tab set “${set.name}”`);
+}
+async function tabSetsDialog() {
+  const listHtml = () => state.tabSets.map((s, i) => `<div class="ow-item" data-i="${i}">${line('tab')}<span>${esc(s.name)}</span><em>${plural(s.panes.reduce((n, p) => n + (p.tabs?.length || 0), 0), 'tab')}</em><button class="btn" data-open="${i}">Open</button><button class="ib" data-del="${i}" title="Delete this set">${line('x')}</button></div>`).join('')
+    || '<div class="sb-empty">No tab sets yet. Save the tabs you have open to make one.</div>';
+  await dialog({
+    title: 'Tab sets',
+    cls: 'ow',
+    html: `<div class="ow-list ts-list">${listHtml()}</div><div class="m-actions"><button class="btn" data-save>Save current tabs…</button><span class="br-sp"></span><button class="btn primary" data-cancel>Done</button></div>`,
+    setup: (root, close) => root.addEventListener('click', async (e) => {
+      const o = e.target.closest('[data-open]');
+      if (o) { openTabSet(state.tabSets[+o.dataset.open]); close(null); return; }
+      const d = e.target.closest('[data-del]');
+      if (d) { state.tabSets.splice(+d.dataset.del, 1); saveState(); $('.ts-list', root).innerHTML = listHtml(); return; }
+      if (e.target.closest('[data-save]')) { close(null); saveTabSet(); }
+    }),
+  });
+}
+async function saveTabSet() {
+  const name = await promptDialog({ title: 'Save tab set', body: 'Saves every tab in both panes so you can open them again later.', value: `Tabs ${state.tabSets.length + 1}`, confirm: 'Save' });
+  if (!name?.trim()) return;
+  state.tabSets = [...state.tabSets.filter((s) => s.name !== name.trim()), { name: name.trim(), panes: windowLayout().panes }];
+  saveState();
+  toast(`Saved tab set “${name.trim()}”`);
+}
