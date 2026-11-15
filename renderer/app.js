@@ -98,6 +98,7 @@ const DEFAULT_SETTINGS = {
   layout: 'side', // side | stacked (panes above each other)
   parentColWidth: 190,
   expandColumns: true, // widen a parent column to fit its names while the mouse rests on it
+  springOpen: false, // open a folder when a drag rests on it for three quarters of a second
   markRecent: true, // highlight items changed in the last hour
   showDrives: true,
   iconTheme: '', // '' = built-in icons, else a freedesktop icon theme id
@@ -2655,7 +2656,7 @@ function showTip(e, info) {
 function springLoad(target) {
   const isFolderRow = target && target.matches('.row[data-drop]');
   const isTab = target && target.matches('.tab:not(.active)');
-  if (!isFolderRow && !isTab) { clearTimeout(spring.t); spring.el = null; return; }
+  if (!S().springOpen || (!isFolderRow && !isTab)) { clearTimeout(spring.t); spring.el = null; return; }
   if (spring.el === target) return;
   clearTimeout(spring.t);
   spring.el = target;
@@ -3683,6 +3684,7 @@ function openSettings() {
     <label class="st-field"><span>Pane layout</span><select data-set="layout">${opt('layout', 'side', 'Side by side')}${opt('layout', 'stacked', 'Above each other')}</select></label>
     <label class="st-field"><span>Parent column width</span><input type="range" min="130" max="340" step="10" data-set="parentColWidth" value="${s.parentColWidth}"><output>${s.parentColWidth}px</output></label>
     ${chk('expandColumns', 'Widen a parent column to fit long names while the mouse rests on it')}
+    ${chk('springOpen', 'Open a folder when a drag rests on it', 'Off: dragging over a folder never opens it')}
     <label class="st-field"><span>Icons</span><select data-set="iconTheme"><option value="">Nova (built-in)</option></select></label>
     <div class="st-field"><span>List columns</span><button class="btn" data-columns>Choose columns…</button></div>
     <p class="st-note">Tip: Ctrl + mouse wheel resizes thumbnails too.</p>`;
