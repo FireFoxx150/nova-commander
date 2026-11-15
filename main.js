@@ -1430,6 +1430,15 @@ function nameMatcher({ query, regex, matchCase }) {
   const q = matchCase ? query : query.toLowerCase();
   return matchCase ? (s) => s.includes(q) : (s) => s.toLowerCase().includes(q);
 }
+// Size and age limits for the search bar. Folders skip the size limit.
+const SIZE_MIN = { any: 0, '1M': 1 << 20, '10M': 10 << 20, '100M': 100 << 20, '1G': 1 << 30 };
+const AGE_DAYS = { any: 0, day: 1, week: 7, month: 31, year: 366 };
+function passesFilters(e, { minSize = 'any', newer = 'any' }) {
+  const min = SIZE_MIN[minSize] || 0;
+  if (min && !e.isDir && (e.size ?? 0) < min) return false;
+  const days = AGE_DAYS[newer] || 0;
+  return !days || e.mtime >= Date.now() - days * 864e5;
+}
 function textMatcher({ query, regex, matchCase }) {
   if (regex) { const re = new RegExp(query, matchCase ? '' : 'i'); return (s) => re.test(s); }
   const q = matchCase ? query : query.toLowerCase();
@@ -1477,7 +1486,7 @@ ipcMain.handle('search:start', async (ev, id, opts) => {
         if (snippet == null) continue;
       } else if (!test(d.name)) continue;
       const e = await statEntry(dir, d.name);
-      if (!e) continue;
+      if (!e || !passesFilters(e, opts)) continue;
       if (snippet != null) e.snippet = snippet;
       batch.push(e);
       if (++count >= SEARCH_LIMIT) { truncated = true; break; }

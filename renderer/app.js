@@ -631,6 +631,8 @@ function buildPane(pane) {
         <button class="s-opt" data-opt="regex" title="Regular expression">.*</button>
         <button class="s-opt" data-opt="content" title="Search inside text files (up to 2 MB)">${line('documents')}</button>
         <button class="s-opt" data-opt="hidden" title="Include hidden files and folders">${line('eye')}</button>
+        <button class="s-opt s-cycle" data-cycle="minSize" title="Only files at least this big"></button>
+        <button class="s-opt s-cycle" data-cycle="newer" title="Only items changed within this time"></button>
         <button class="btn s-go"></button>
         <button class="ib s-close" title="Close search (Esc)">${line('x')}</button>
       </div>
@@ -3295,9 +3297,14 @@ async function compress(paths, destDir, quick) {
 /* =========================================================
  * Recursive search (replaces the pane body while open)
  * ======================================================= */
+// Values cycle through these in order when the search bar's size and age buttons are clicked.
+const SEARCH_CYCLES = {
+  minSize: [['any', 'Any size'], ['1M', 'Over 1 MB'], ['10M', 'Over 10 MB'], ['100M', 'Over 100 MB'], ['1G', 'Over 1 GB']],
+  newer: [['any', 'Any date'], ['day', 'Last day'], ['week', 'Last week'], ['month', 'Last month'], ['year', 'Last year']],
+};
 function newSearch() {
   return {
-    open: false, root: HOME, query: '', opts: { matchCase: false, regex: false, content: false, hidden: false },
+    open: false, root: HOME, query: '', opts: { matchCase: false, regex: false, content: false, hidden: false, minSize: 'any', newer: 'any' },
     results: [], map: new Map(), sel: new Set(), cursor: null, anchor: null,
     id: null, running: false, dirs: 0, done: null, sort: { key: null, dir: 1 },
   };
@@ -3404,6 +3411,11 @@ function renderSearch(pane) {
   const s = pane.search;
   if (!s?.open) return;
   pane.searchEl.querySelectorAll('[data-opt]').forEach((b) => b.classList.toggle('on', !!s.opts[b.dataset.opt]));
+  pane.searchEl.querySelectorAll('[data-cycle]').forEach((b) => {
+    const [, label] = SEARCH_CYCLES[b.dataset.cycle].find(([v]) => v === s.opts[b.dataset.cycle]);
+    b.textContent = label;
+    b.classList.toggle('on', s.opts[b.dataset.cycle] !== 'any');
+  });
   $('.s-go', pane.searchEl).textContent = s.running ? 'Stop' : 'Search';
   pane.sInput.placeholder = s.opts.content ? 'Find text inside files' : s.opts.regex ? 'Regular expression for names' : 'Search names — * and ? work as wildcards';
   const where = P.display(s.root);
@@ -3553,8 +3565,10 @@ function bindSearch(pane) {
   $('.s-bar', el).addEventListener('click', (e) => {
     const s = pane.search;
     const opt = e.target.closest('[data-opt]');
-    if (opt) {
-      s.opts[opt.dataset.opt] = !s.opts[opt.dataset.opt];
+    const cyc = e.target.closest('[data-cycle]');
+    if (opt || cyc) {
+      if (opt) s.opts[opt.dataset.opt] = !s.opts[opt.dataset.opt];
+      else { const list = SEARCH_CYCLES[cyc.dataset.cycle]; const i = list.findIndex(([v]) => v === s.opts[cyc.dataset.cycle]); s.opts[cyc.dataset.cycle] = list[(i + 1) % list.length][0]; }
       renderSearch(pane);
       if (pane.sInput.value.trim() && (s.done || s.running)) runSearch(pane);
       pane.sInput.focus();
