@@ -99,6 +99,7 @@ const DEFAULT_SETTINGS = {
   parentColWidth: 190,
   expandColumns: true, // widen a parent column to fit its names while the mouse rests on it
   springOpen: false, // open a folder when a drag rests on it for three quarters of a second
+  thumbShadow: true, // soft shadow under thumbnails; turn off if scrolling thumbnail view glitches
   markRecent: true, // highlight items changed in the last hour
   showDrives: true,
   iconTheme: '', // '' = built-in icons, else a freedesktop icon theme id
@@ -3610,8 +3611,9 @@ function bindSearch(pane) {
 const BAR_BUTTONS = [['btn-settings', 'Settings'], ['btn-theme', 'Theme'], ['btn-hidden', 'Show hidden files'], ['btn-dual', 'Dual pane'], ['btn-preview', 'Preview panel'], ['btn-term', 'Terminal'], ['btn-undo', 'Undo'], ['btn-ops', 'File operations']];
 function applySettings() {
   for (const [id] of BAR_BUTTONS) $(`#${id}`).hidden = S().barHidden.includes(id);
+  document.body.classList.toggle('no-thumb-shadow', !S().thumbShadow);
   if (S().fontFamily) document.documentElement.style.setProperty('--font', S().fontFamily); else document.documentElement.style.removeProperty('--font');
-  renderToolbar();
+  renderBottomTools();
   const root = document.documentElement.style;
   root.setProperty('--row-h', `${S().rowHeight}px`);
   root.setProperty('--fs', `${S().fontSize}px`);
@@ -3685,6 +3687,7 @@ function openSettings() {
     <label class="st-field"><span>Parent column width</span><input type="range" min="130" max="340" step="10" data-set="parentColWidth" value="${s.parentColWidth}"><output>${s.parentColWidth}px</output></label>
     ${chk('expandColumns', 'Widen a parent column to fit long names while the mouse rests on it')}
     ${chk('springOpen', 'Open a folder when a drag rests on it', 'Off: dragging over a folder never opens it')}
+    ${chk('thumbShadow', 'Shadow under thumbnails', 'Turn off if thumbnail view glitches while scrolling')}
     <label class="st-field"><span>Icons</span><select data-set="iconTheme"><option value="">Nova (built-in)</option></select></label>
     <div class="st-field"><span>List columns</span><button class="btn" data-columns>Choose columns…</button></div>
     <p class="st-note">Tip: Ctrl + mouse wheel resizes thumbnails too.</p>`;

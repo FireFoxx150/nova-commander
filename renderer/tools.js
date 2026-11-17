@@ -1294,7 +1294,7 @@ async function saveFilter(text) {
  * Bottom-bar commands and the Folders tree
  * ======================================================= */
 // Buttons for the commands the user picked in Settings → Toolbar. Each runs the command for the active pane.
-function renderToolbar() {
+function renderBottomTools() {
   const box = $('#sb-tools');
   if (!box) return;
   box.innerHTML = S().toolbar.map((id) => ACTIONS.find((a) => a.id === id)).filter(Boolean)
