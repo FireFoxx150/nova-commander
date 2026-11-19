@@ -99,6 +99,7 @@ const DEFAULT_SETTINGS = {
   parentColWidth: 190,
   expandColumns: true, // widen a parent column to fit its names while the mouse rests on it
   springOpen: false, // open a folder when a drag rests on it for three quarters of a second
+  moveToast: true, // show a message with Undo after moving or copying files
   thumbShadow: true, // soft shadow under thumbnails; turn off if scrolling thumbnail view glitches
   markRecent: true, // highlight items changed in the last hour
   showDrives: true,
@@ -1432,7 +1433,7 @@ async function transfer(paths, destDir, mode) {
     const entry = { type: mode, pairs: res.done };
     pushUndo(entry);
     const what = n === 1 ? `“${P.basename(res.done[0].to)}”` : plural(n, 'item');
-    toast(`${mode === 'move' ? 'Moved' : 'Copied'} ${what} to ${dirLabel(destDir)}`, 'success', { action: { label: 'Undo', fn: () => undo(entry) } });
+    if (S().moveToast) toast(`${mode === 'move' ? 'Moved' : 'Copied'} ${what} to ${dirLabel(destDir)}`, 'success', { action: { label: 'Undo', fn: () => undo(entry) } });
     recordDest(destDir);
   }
   if (res.cancelled) toast(`${mode === 'move' ? 'Move' : 'Copy'} cancelled${n ? ` — ${plural(n, 'item')} had already finished` : ''}`);
@@ -3687,6 +3688,7 @@ function openSettings() {
     <label class="st-field"><span>Parent column width</span><input type="range" min="130" max="340" step="10" data-set="parentColWidth" value="${s.parentColWidth}"><output>${s.parentColWidth}px</output></label>
     ${chk('expandColumns', 'Widen a parent column to fit long names while the mouse rests on it')}
     ${chk('springOpen', 'Open a folder when a drag rests on it', 'Off: dragging over a folder never opens it')}
+    ${chk('moveToast', 'Show a message after moving or copying files', 'Undo is still available with Ctrl+Z')}
     ${chk('thumbShadow', 'Shadow under thumbnails', 'Turn off if thumbnail view glitches while scrolling')}
     <label class="st-field"><span>Icons</span><select data-set="iconTheme"><option value="">Nova (built-in)</option></select></label>
     <div class="st-field"><span>List columns</span><button class="btn" data-columns>Choose columns…</button></div>
