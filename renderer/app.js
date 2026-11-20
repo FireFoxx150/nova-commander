@@ -557,6 +557,10 @@ async function refreshDir(dir) {
         syncPath(tab);
         continue;
       }
+      // Same listing as last time: nothing to redraw, so the thumbnails don't reload.
+      const sig = res.entries.map((e) => `${e.path}|${e.size}|${e.mtime}`).join('\n');
+      if (col.sig === sig) continue;
+      col.sig = sig;
       col.entries = res.entries;
       col.map = new Map(res.entries.map((e) => [e.path, e]));
       col.error = null;
@@ -906,6 +910,10 @@ function listColumns(pane) {
 }
 const colsKey = (pane) => listColumns(pane).map((c) => c.id).join();
 let listMaxSize = 1; // largest size in the current list, for the size bars
+// Thumbnails that have finished loading. A grid rebuilt from markup reuses them without waiting, so they don't blank out.
+const drawnThumbs = new Set();
+const thumbUrls = new Map(); // path -> cached thumbnail URL, known once cacheThumbs has resolved it
+document.addEventListener('load', (e) => { const p = e.target.closest?.('.g-thumb img') && e.target.closest('[data-path]')?.dataset.path; if (p) drawnThumbs.add(p); }, true);
 function listRowHtml(e, col, focused, cols) {
   const ext = e.isDir ? '' : extOf(e.name);
   const base = ext ? esc(e.name.slice(0, -(ext.length + 1))) : esc(e.name);
@@ -921,12 +929,12 @@ const VIDEO_THUMB_EXT = new Set(['mp4', 'webm', 'mov', 'mkv', 'avi', 'wmv', 'flv
 function gridTileHtml(e, col, focused) {
   const place = e.isDir ? placeByPath(e.path) : null;
   // Big images get their src from the thumbnail cache (cacheThumbs) instead of the full file.
-  const cached = S().thumbCache && e.size > 150 * 1024;
+  const cached = S().thumbCache && !e.isDir; // every image shows its small cached copy, not the full file
   // Videos start as their file icon; loadVideoThumbs swaps in a real frame once it's extracted.
   const skipThumb = S().thumbSkip.split(',').map((x) => x.trim().replace(/^\./, '').toLowerCase()).filter(Boolean).includes(extOf(e.name).toLowerCase());
   const isVideo = !e.isDir && !e.broken && !skipThumb && VIDEO_THUMB_EXT.has(extOf(e.name));
   const thumb = !e.isDir && !e.broken && !skipThumb && THUMB_EXT.has(extOf(e.name))
-    ? `<img loading="lazy" decoding="async" ${cached ? 'data-full' : 'src'}="${esc(fileUri(e.path))}" alt="" draggable="false">`
+    ? `<img ${drawnThumbs.has(e.path) ? 'loading="eager" decoding="sync"' : 'loading="lazy" decoding="async"'} ${cached && !thumbUrls.has(e.path) ? 'data-full' : 'src'}="${esc(thumbUrls.get(e.path) || fileUri(e.path))}" alt="" draggable="false">`
     : isVideo ? `<span class="v-frame" data-video="${esc(e.path)}">${iconFor(e, { big: true })}</span>`
     : iconFor(e, { big: true, special: place && place.id !== 'trash' ? place.id : null });
   return `<div ${rowAttrs(e, col, focused)} title="${esc(e.name)}"><span class="r-icon g-thumb">${thumb}</span><span class="r-name">${esc(e.name)}</span></div>`;
@@ -3944,7 +3952,14 @@ function bindChrome() {
       : '<svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>';
   });
 
-  api.onChanged((dir) => refreshDir(dir));
+  // A move fires several change events for one folder: refresh each folder once, after they settle.
+  const changed = new Set();
+  let changedT = 0;
+  api.onChanged((dir) => {
+    changed.add(dir);
+    clearTimeout(changedT);
+    changedT = setTimeout(() => { const dirs = [...changed]; changed.clear(); for (const d of dirs) refreshDir(d); }, 150);
+  });
   // A thumbnail that can't be decoded falls back to the file-type icon.
   document.addEventListener('error', (e) => {
     const img = e.target;

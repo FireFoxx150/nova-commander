@@ -1142,7 +1142,7 @@ function cacheThumbs(pane) {
     const p = img.closest('[data-path]')?.dataset.path;
     if (!p) continue;
     api.thumb(p).then(({ key, url }) => {
-      if (url) { img.src = url; return; }
+      if (url) { img.src = url; thumbUrls.set(p, url); return; }
       img.src = full;
       if (!key || thumbBusy.has(key)) return;
       const make = async () => {
