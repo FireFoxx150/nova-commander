@@ -575,7 +575,7 @@ async function refreshDir(dir) {
       syncPath(tab);
     }
   }
-  for (const pane of touched) if (!pane.renaming) renderPane(pane);
+  for (const pane of touched) if (!pane.renaming && !patchGrid(pane)) renderPane(pane);
   if (touched.size) { updatePreview(true); updateWatch(); }
 }
 async function refreshDirs(dirs) {
@@ -981,6 +981,41 @@ function gitBadge(e) {
   return letter ? `<span class="git-badge git-${letter}" title="Git: ${letter === 'U' ? 'untracked' : letter === 'M' ? 'modified' : letter === 'A' ? 'added' : letter === 'D' ? 'deleted' : letter}">${letter}</span>` : '';
 }
 
+// Files came or went in a grid that is already on screen: add and remove tiles in place, so the rest of the grid isn't redrawn.
+// Returns false when a full redraw is needed.
+function patchGrid(pane) {
+  const tab = tabOf(pane);
+  const col = tab.columns.at(-1);
+  const body = pane.listEl.querySelector(':scope > .list-body.grid');
+  if (!body || tab.view !== 'grid' || tab.columns.length !== 1 || !col?.shownPaths || body.dataset.path !== col.path || body.querySelector(':scope > .empty')) return false;
+  const vis = visible(tab, col);
+  if (!vis.length) return false;
+  const next = vis.map((e) => e.path);
+  const have = new Map([...body.querySelectorAll(':scope > .row[data-path]')].map((el) => [el.dataset.path, el]));
+  const gone = [...have.keys()].filter((p) => !col.map.has(p));
+  // Nothing added or removed (a file may have changed in place): redraw, so its tile shows the new details.
+  if (!gone.length && next.every((p) => have.has(p))) return false;
+  for (const p of gone) { have.get(p).remove(); have.delete(p); }
+  const focused = activePane() === pane && tab.focusCol === 0;
+  const added = [];
+  let ref = null; // build from the end, so each new tile goes in front of the one that follows it
+  for (let i = next.length - 1; i >= 0; i--) {
+    let el = have.get(next[i]);
+    if (!el) {
+      const t = document.createElement('div');
+      t.innerHTML = gridTileHtml(col.map.get(next[i]), col, focused);
+      el = t.firstElementChild;
+      body.insertBefore(el, ref);
+      added.push(vis[i]);
+    }
+    ref = el;
+  }
+  col.shownPaths = next;
+  renderHeadInfo(pane);
+  if (added.length) queueMicrotask(() => { queueDirSizes(pane); queueMeta(pane, vis); cacheThumbs(pane); loadVideoThumbs(pane); });
+  return true;
+}
+
 function renderBody(pane) {
   const tab = tabOf(pane);
   const lastIdx = tab.columns.length - 1;
@@ -1041,6 +1076,7 @@ function renderBody(pane) {
   if (grid) {
     pane.listEl.innerHTML = `${noteHtml}<div class="list-body grid ${focused ? 'focused' : ''}${bg ? ' has-bg' : ''}" data-col="${lastIdx}" data-path="${esc(col.path)}" style="--tile:${pane.gridSize || S().gridSize}px;${bg ? `--bg-img:url('${esc(fileUri(bg))}')` : ''}">${body}</div>`;
     $('.list-body', pane.listEl).scrollTop = top;
+    col.shownPaths = vis.map((e) => e.path); // what the grid shows, so a later change can patch it in place
     return;
   }
   pane.listEl.style.setProperty('--cols', `18px minmax(110px, 1fr) ${cols.map((c) => `${c.w}px`).join(' ')}`);
