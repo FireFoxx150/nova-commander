@@ -1155,7 +1155,13 @@ function cacheThumbs(pane) {
           c.height = Math.round(img.naturalHeight * s);
           c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
           const blob = await new Promise((res) => c.toBlob(res, 'image/webp', 0.82));
-          if (blob) await api.putThumb(key, new Uint8Array(await blob.arrayBuffer()));
+          const url = blob && await api.putThumb(key, new Uint8Array(await blob.arrayBuffer()));
+          if (url) { // swap the full-size photo for its small copy, once that has loaded, so it stops using the memory
+            thumbUrls.set(p, url);
+            const small = new Image();
+            small.onload = () => { if (img.isConnected) img.src = url; };
+            small.src = url;
+          }
         } catch { /* leave uncached */ } finally { thumbBusy.delete(key); }
       };
       if (img.complete && img.naturalWidth) make(); else img.addEventListener('load', make, { once: true });
