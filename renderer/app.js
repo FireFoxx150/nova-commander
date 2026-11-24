@@ -516,10 +516,26 @@ function selectEntry(pane, tab, k, path, { ctrl = false, shift = false, delay = 
     }
   }
   syncPath(tab);
-  renderPane(pane);
+  if (!patchGridSel(pane)) renderPane(pane);
   ensureCursorVisible(pane);
   updatePreview();
   renderSidebarCurrent();
+}
+// Grid view: a selection change only swaps the sel/cursor classes, so the thumbnails aren't redrawn.
+function patchGridSel(pane) {
+  const tab = tabOf(pane);
+  const col = tab.columns.at(-1);
+  const body = pane.listEl.querySelector(':scope > .list-body.grid');
+  if (!body || tab.view !== 'grid' || tab.columns.length !== 1 || !col?.shownPaths || body.dataset.path !== col.path || body.querySelector(':scope > .empty')) return false;
+  const focused = activePane() === pane && tab.focusCol === 0;
+  body.classList.toggle('focused', focused);
+  const rows = new Map([...body.querySelectorAll(':scope > .row[data-path]')].map((el) => [el.dataset.path, el]));
+  for (const el of body.querySelectorAll(':scope > .row.sel, :scope > .row.cursor')) el.classList.remove('sel', 'cursor');
+  for (const path of col.sel) rows.get(path)?.classList.add('sel');
+  const cur = rows.get(col.cursor);
+  if (cur && focused && (col.sel.size > 1 || !col.sel.has(col.cursor))) cur.classList.add('cursor');
+  renderHeadInfo(pane);
+  return true;
 }
 
 function activateEntry(pane, tab, k, path) {
@@ -545,9 +561,9 @@ async function refreshDir(dir) {
     for (const tab of pane.tabs) {
       const k = tab.columns.findIndex((c) => c.path === dir);
       if (k < 0) continue;
-      touched.add(pane);
       const col = tab.columns[k];
       if (!res.ok) {
+        touched.add(pane);
         if (res.code === 'ENOENT') {
           tab.columns.length = k;
           if (!tab.columns.length) { navigate(pane, tab, P.dirname(dir), { push: false }); continue; }
@@ -558,8 +574,10 @@ async function refreshDir(dir) {
         continue;
       }
       // Same listing as last time: nothing to redraw, so the thumbnails don't reload.
-      const sig = res.entries.map((e) => `${e.path}|${e.size}|${e.mtime}`).join('\n');
-      if (col.sig === sig) continue;
+      const sigOf = (list) => list.map((e) => `${e.path}|${e.size}|${e.mtime}`).join('\n');
+      const sig = sigOf(res.entries);
+      if ((col.sig ?? sigOf(col.entries)) === sig) { col.sig = sig; continue; } // a folder's first refresh compares with what was loaded
+      touched.add(pane);
       col.sig = sig;
       col.entries = res.entries;
       col.map = new Map(res.entries.map((e) => [e.path, e]));
@@ -971,7 +989,9 @@ function loadGit(dir) {
     gitCache.set(dir, info);
   }).catch(() => gitCache.set(dir, { none: true })).finally(() => {
     gitBusy.delete(dir);
-    for (const pane of visiblePanes()) if (tabOf(pane).columns.at(-1)?.path === dir) renderBody(pane);
+    // Only a repository has badges to draw; redrawing a plain folder here would reload its thumbnails for nothing.
+    const g = gitCache.get(dir);
+    if (g && !g.none) for (const pane of visiblePanes()) if (tabOf(pane).columns.at(-1)?.path === dir) renderBody(pane);
   });
 }
 function gitBadge(e) {
@@ -983,6 +1003,7 @@ function gitBadge(e) {
 
 // Files came or went in a grid that is already on screen: add and remove tiles in place, so the rest of the grid isn't redrawn.
 // Returns false when a full redraw is needed.
+const tileSig = (e) => `${e.size}|${e.mtime}`; // what a grid tile shows that can change under it
 function patchGrid(pane) {
   const tab = tabOf(pane);
   const col = tab.columns.at(-1);
@@ -993,23 +1014,27 @@ function patchGrid(pane) {
   const next = vis.map((e) => e.path);
   const have = new Map([...body.querySelectorAll(':scope > .row[data-path]')].map((el) => [el.dataset.path, el]));
   const gone = [...have.keys()].filter((p) => !col.map.has(p));
-  // Nothing added or removed (a file may have changed in place): redraw, so its tile shows the new details.
-  if (!gone.length && next.every((p) => have.has(p))) return false;
-  for (const p of gone) { have.get(p).remove(); have.delete(p); }
   const focused = activePane() === pane && tab.focusCol === 0;
-  const added = [];
+  const tileHtml = (p) => { const t = document.createElement('div'); t.innerHTML = gridTileHtml(col.map.get(p), col, focused); return t.firstElementChild; };
+  const changed = next.filter((p) => have.has(p) && col.tileSig?.get(p) !== tileSig(col.map.get(p)));
+  if (!gone.length && !changed.length && next.every((p) => have.has(p))) return false;
+  for (const p of gone) { have.get(p).remove(); have.delete(p); }
+  // A tile whose size or date changed (a folder you dropped a file onto) is swapped alone, not the whole grid.
+  for (const p of changed) { const el = tileHtml(p); have.get(p).replaceWith(el); have.set(p, el); }
+  const added = changed.map((p) => col.map.get(p));
   let ref = null; // build from the end, so each new tile goes in front of the one that follows it
   for (let i = next.length - 1; i >= 0; i--) {
     let el = have.get(next[i]);
     if (!el) {
-      const t = document.createElement('div');
-      t.innerHTML = gridTileHtml(col.map.get(next[i]), col, focused);
-      el = t.firstElementChild;
+      el = tileHtml(next[i]);
       body.insertBefore(el, ref);
       added.push(vis[i]);
     }
     ref = el;
   }
+  // A changed date can move a tile in the sort order; only a full redraw puts it right.
+  if ([...body.querySelectorAll(':scope > .row[data-path]')].some((el, i) => el.dataset.path !== next[i])) return false;
+  col.tileSig = new Map(vis.map((e) => [e.path, tileSig(e)]));
   col.shownPaths = next;
   renderHeadInfo(pane);
   if (added.length) queueMicrotask(() => { queueDirSizes(pane); queueMeta(pane, vis); cacheThumbs(pane); loadVideoThumbs(pane); });
@@ -1077,6 +1102,7 @@ function renderBody(pane) {
     pane.listEl.innerHTML = `${noteHtml}<div class="list-body grid ${focused ? 'focused' : ''}${bg ? ' has-bg' : ''}" data-col="${lastIdx}" data-path="${esc(col.path)}" style="--tile:${pane.gridSize || S().gridSize}px;${bg ? `--bg-img:url('${esc(fileUri(bg))}')` : ''}">${body}</div>`;
     $('.list-body', pane.listEl).scrollTop = top;
     col.shownPaths = vis.map((e) => e.path); // what the grid shows, so a later change can patch it in place
+    col.tileSig = new Map(vis.map((e) => [e.path, tileSig(e)]));
     return;
   }
   pane.listEl.style.setProperty('--cols', `18px minmax(110px, 1fr) ${cols.map((c) => `${c.w}px`).join(' ')}`);
@@ -2753,7 +2779,7 @@ function endDrag() {
   spring.el = null;
   document.body.classList.remove('dragging');
   for (const p of state.panes) {
-    renderPane(p);
+    if (!patchGridSel(p)) renderPane(p); // grid view: sync the highlight only, so the thumbnails aren't redrawn after every drop
     renderSearch(p);
     // A drag may have selected a folder without opening its column; open it now.
     const tab = tabOf(p);
